@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FolderOpen } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../../../shared/view/ui';
 import { browseFilesystemFolders } from '../data/workspaceApi';
 import { getSuggestionRootPath } from '../utils/pathUtils';
@@ -21,6 +22,7 @@ export default function WorkspacePathField({
   onChange,
   onAdvanceToConfirm,
 }: WorkspacePathFieldProps) {
+  const { t } = useTranslation();
   const [pathSuggestions, setPathSuggestions] = useState<FolderSuggestion[]>([]);
   const [showPathDropdown, setShowPathDropdown] = useState(false);
   const [showFolderBrowser, setShowFolderBrowser] = useState(false);
@@ -90,8 +92,8 @@ export default function WorkspacePathField({
             onChange={(event) => onChange(event.target.value)}
             placeholder={
               workspaceType === 'existing'
-                ? '/path/to/existing/workspace'
-                : '/path/to/new/workspace'
+                ? t('projectWizard.step2.existingPlaceholder')
+                : t('projectWizard.step2.newPlaceholder')
             }
             className="w-full"
             disabled={disabled}
@@ -118,7 +120,7 @@ export default function WorkspacePathField({
           variant="outline"
           onClick={() => setShowFolderBrowser(true)}
           className="px-3"
-          title="Browse folders"
+          title={t('projectWizard.folderBrowser.browseFolders')}
           disabled={disabled}
         >
           <FolderOpen className="h-4 w-4" />

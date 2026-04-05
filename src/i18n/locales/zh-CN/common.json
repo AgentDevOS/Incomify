@@ -183,6 +183,7 @@
       "cloneFrom": "克隆自：",
       "authentication": "身份验证：",
       "usingStoredToken": "使用已保存的令牌：",
+      "unknownToken": "未知",
       "usingProvidedToken": "使用提供的令牌",
       "noAuthentication": "无身份验证",
       "sshKey": "SSH 密钥",
@@ -190,6 +191,22 @@
       "newWithClone": "仓库将从此文件夹克隆。",
       "newEmpty": "工作区将被添加到您的项目列表中，并可用于 Claude/Cursor 会话。",
       "cloningRepository": "正在克隆仓库..."
+    },
+    "folderBrowser": {
+      "title": "选择文件夹",
+      "hideHiddenFolders": "隐藏隐藏文件夹",
+      "showHiddenFolders": "显示隐藏文件夹",
+      "createNewFolder": "新建文件夹",
+      "newFolderName": "新文件夹名称",
+      "create": "创建",
+      "cancel": "取消",
+      "noSubfoldersFound": "未找到子文件夹",
+      "select": "选择",
+      "path": "路径：",
+      "useThisFolder": "使用此文件夹",
+      "browseFolders": "浏览文件夹",
+      "loadFailed": "加载文件夹失败",
+      "createFailed": "创建文件夹失败"
     },
     "buttons": {
       "cancel": "取消",

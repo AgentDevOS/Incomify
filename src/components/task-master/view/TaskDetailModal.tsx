@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertCircle,
   ArrowRight,
@@ -29,15 +30,6 @@ type TaskDetailModalProps = {
   onTaskClick?: ((task: TaskReference) => void) | null;
 };
 
-const STATUS_OPTIONS = [
-  { value: 'pending', label: 'Pending' },
-  { value: 'in-progress', label: 'In Progress' },
-  { value: 'review', label: 'Review' },
-  { value: 'done', label: 'Done' },
-  { value: 'deferred', label: 'Deferred' },
-  { value: 'cancelled', label: 'Cancelled' },
-];
-
 function getStatusIcon(status?: string) {
   if (status === 'done') return CheckCircle;
   if (status === 'in-progress') return Clock;
@@ -63,6 +55,7 @@ export default function TaskDetailModal({
   onStatusChange = null,
   onTaskClick = null,
 }: TaskDetailModalProps) {
+  const { t } = useTranslation('tasks');
   const { currentProject, refreshTasks } = useTaskMaster();
 
   const [isEditMode, setIsEditMode] = useState(false);
@@ -77,6 +70,14 @@ export default function TaskDetailModal({
   }, [task]);
 
   const StatusIcon = useMemo(() => getStatusIcon(task?.status), [task?.status]);
+  const statusOptions = useMemo(() => ([
+    { value: 'pending', label: t('statuses.pending') },
+    { value: 'in-progress', label: t('statuses.in-progress') },
+    { value: 'review', label: t('statuses.review') },
+    { value: 'done', label: t('statuses.done') },
+    { value: 'deferred', label: t('statuses.deferred') },
+    { value: 'cancelled', label: t('statuses.cancelled') },
+  ]), [t]);
 
   if (!isOpen || !task || !editableTask) {
     return null;
@@ -111,7 +112,7 @@ export default function TaskDetailModal({
       const response = await api.taskmaster.updateTask(currentProject.name, task.id, updates);
       if (!response.ok) {
         const errorPayload = (await response.json()) as { message?: string };
-        throw new Error(errorPayload.message ?? 'Failed to update task');
+        throw new Error(errorPayload.message ?? t('taskDetail.updateTaskFailed'));
       }
 
       setIsEditMode(false);
@@ -119,7 +120,7 @@ export default function TaskDetailModal({
       onEdit?.(editableTask);
     } catch (error) {
       console.error('Failed to save task changes:', error);
-      alert(error instanceof Error ? error.message : 'Failed to update task');
+      alert(error instanceof Error ? error.message : t('taskDetail.updateTaskFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -134,14 +135,14 @@ export default function TaskDetailModal({
       const response = await api.taskmaster.updateTask(currentProject.name, task.id, { status: nextStatus });
       if (!response.ok) {
         const errorPayload = (await response.json()) as { message?: string };
-        throw new Error(errorPayload.message ?? 'Failed to update task status');
+        throw new Error(errorPayload.message ?? t('taskDetail.updateTaskStatusFailed'));
       }
 
       await refreshTasks();
       onStatusChange?.(task.id, nextStatus);
     } catch (error) {
       console.error('Failed to update task status:', error);
-      alert(error instanceof Error ? error.message : 'Failed to update task status');
+      alert(error instanceof Error ? error.message : t('taskDetail.updateTaskStatusFailed'));
     }
   };
 
@@ -160,9 +161,9 @@ export default function TaskDetailModal({
               <button
                 onClick={() => copyTextToClipboard(String(task.id))}
                 className="mb-2 inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-                title="Copy task ID"
+                title={t('buttons.copyTaskId')}
               >
-                <span>Task {task.id}</span>
+                <span>{t('banner.taskId', { id: task.id })}</span>
                 <Copy className="h-3 w-3" />
               </button>
 
@@ -186,7 +187,7 @@ export default function TaskDetailModal({
                   onClick={handleSaveChanges}
                   disabled={isSaving}
                   className="rounded-md p-2 text-green-600 hover:bg-green-50 disabled:opacity-50 dark:hover:bg-green-950"
-                  title="Save"
+                  title={t('buttons.save')}
                 >
                   <Save className={cn('w-5 h-5', isSaving && 'animate-spin')} />
                 </button>
@@ -197,7 +198,7 @@ export default function TaskDetailModal({
                   }}
                   disabled={isSaving}
                   className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  title="Cancel editing"
+                  title={t('buttons.cancelEditing')}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -206,12 +207,12 @@ export default function TaskDetailModal({
               <button
                 onClick={() => setIsEditMode(true)}
                 className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
-                title="Edit task"
+                title={t('buttons.editTask')}
               >
                 <Edit className="h-5 w-5" />
               </button>
             )}
-            <button onClick={onClose} className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Close">
+            <button onClick={onClose} className="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title={t('buttons.close')}>
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -220,7 +221,7 @@ export default function TaskDetailModal({
         <div className="flex-1 space-y-6 overflow-y-auto p-4 md:p-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('taskDetail.status')}</label>
               <select
                 value={task.status ?? 'pending'}
                 onChange={(event) => {
@@ -228,7 +229,7 @@ export default function TaskDetailModal({
                 }}
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
               >
-                {STATUS_OPTIONS.map((option) => (
+                {statusOptions.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
@@ -237,14 +238,14 @@ export default function TaskDetailModal({
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Priority</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('taskDetail.priority')}</label>
               <div className={cn('px-3 py-2 rounded-md text-sm font-medium capitalize', getPriorityBadgeClass(task.priority))}>
-                {task.priority ?? 'Not set'}
+                {task.priority ? t(`priorities.${task.priority}`) : t('priorities.notSet')}
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Dependencies</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('taskDetail.dependencies')}</label>
               {Array.isArray(task.dependencies) && task.dependencies.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                   {task.dependencies.map((dependency) => (
@@ -259,13 +260,13 @@ export default function TaskDetailModal({
                   ))}
                 </div>
               ) : (
-                <span className="text-sm text-gray-500 dark:text-gray-400">No dependencies</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{t('taskDetail.noDependencies')}</span>
               )}
             </div>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('taskDetail.description')}</label>
             {isEditMode ? (
               <textarea
                 rows={4}
@@ -274,7 +275,7 @@ export default function TaskDetailModal({
                 className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 dark:border-gray-600 dark:bg-gray-800"
               />
             ) : (
-              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{task.description || 'No description provided'}</p>
+              <p className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{task.description || t('taskDetail.noDescription')}</p>
             )}
           </div>
 
@@ -284,7 +285,7 @@ export default function TaskDetailModal({
                 onClick={() => setShowDetails((current) => !current)}
                 className="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
               >
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Implementation Details</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('taskDetail.implementationDetails')}</span>
                 {showDetails ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
               {showDetails && (
@@ -301,7 +302,7 @@ export default function TaskDetailModal({
                 onClick={() => setShowTestStrategy((current) => !current)}
                 className="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800"
               >
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Test Strategy</span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{t('taskDetail.testStrategy')}</span>
                 {showTestStrategy ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
               </button>
               {showTestStrategy && (

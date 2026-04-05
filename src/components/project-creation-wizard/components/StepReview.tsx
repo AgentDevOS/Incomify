@@ -20,7 +20,7 @@ export default function StepReview({
 
   const authenticationLabel = useMemo(() => {
     if (formState.tokenMode === 'stored' && formState.selectedGithubToken) {
-      return `${t('projectWizard.step3.usingStoredToken')} ${selectedTokenName || 'Unknown'}`;
+      return `${t('projectWizard.step3.usingStoredToken')} ${selectedTokenName || t('projectWizard.step3.unknownToken')}`;
     }
 
     if (formState.tokenMode === 'new' && formState.newGithubToken.trim()) {
@@ -28,7 +28,7 @@ export default function StepReview({
     }
 
     if (isSshGitUrl(formState.githubUrl)) {
-      return t('projectWizard.step3.sshKey', { defaultValue: 'SSH Key' });
+      return t('projectWizard.step3.sshKey');
     }
 
     return t('projectWizard.step3.noAuthentication');
@@ -86,7 +86,7 @@ export default function StepReview({
         {isCreating && cloneProgress ? (
           <div className="space-y-2">
             <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
-              {t('projectWizard.step3.cloningRepository', { defaultValue: 'Cloning repository...' })}
+              {t('projectWizard.step3.cloningRepository')}
             </p>
             <code className="block whitespace-pre-wrap break-all font-mono text-xs text-blue-700 dark:text-blue-300">
               {cloneProgress}

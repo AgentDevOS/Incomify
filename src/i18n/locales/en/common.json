@@ -183,6 +183,7 @@
       "cloneFrom": "Clone From:",
       "authentication": "Authentication:",
       "usingStoredToken": "Using stored token:",
+      "unknownToken": "Unknown",
       "usingProvidedToken": "Using provided token",
       "noAuthentication": "No authentication",
       "sshKey": "SSH Key",
@@ -190,6 +191,22 @@
       "newWithClone": "The repository will be cloned from this folder.",
       "newEmpty": "The workspace will be added to your project list and will be available for Claude/Cursor sessions.",
       "cloningRepository": "Cloning repository..."
+    },
+    "folderBrowser": {
+      "title": "Select Folder",
+      "hideHiddenFolders": "Hide hidden folders",
+      "showHiddenFolders": "Show hidden folders",
+      "createNewFolder": "Create new folder",
+      "newFolderName": "New folder name",
+      "create": "Create",
+      "cancel": "Cancel",
+      "noSubfoldersFound": "No subfolders found",
+      "select": "Select",
+      "path": "Path:",
+      "useThisFolder": "Use this folder",
+      "browseFolders": "Browse folders",
+      "loadFailed": "Failed to load folders",
+      "createFailed": "Failed to create folder"
     },
     "buttons": {
       "cancel": "Cancel",

@@ -1,16 +1,9 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { GitCommitSummary } from '../../types/types';
 import { getStatusBadgeClass, parseCommitFiles } from '../../utils/gitPanelUtils';
 import GitDiffViewer from '../shared/GitDiffViewer';
-
-function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
 
 type CommitHistoryItemProps = {
   commit: GitCommitSummary;
@@ -29,10 +22,19 @@ export default function CommitHistoryItem({
   wrapText,
   onToggle,
 }: CommitHistoryItemProps) {
+  const { t, i18n } = useTranslation('git');
   const fileSummary = useMemo(() => {
     if (!diff) return null;
     return parseCommitFiles(diff);
   }, [diff]);
+  const formattedDate = useMemo(() => {
+    const locale = i18n.language === 'zh-CN' ? 'zh-CN' : 'en-US';
+    return new Date(commit.date).toLocaleDateString(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }, [commit.date, i18n.language]);
 
   return (
     <div className="border-b border-border last:border-0">
@@ -73,12 +75,12 @@ export default function CommitHistoryItem({
             {/* Author + Date */}
             <div className="mb-3 flex gap-4 text-xs text-muted-foreground">
               <span>
-                <span className="text-muted-foreground/60">Author </span>
+                <span className="text-muted-foreground/60">{t('history.author')} </span>
                 {commit.author}
               </span>
               <span>
-                <span className="text-muted-foreground/60">Date </span>
-                {formatDate(commit.date)}
+                <span className="text-muted-foreground/60">{t('history.date')} </span>
+                {formattedDate}
               </span>
             </div>
 
@@ -86,15 +88,15 @@ export default function CommitHistoryItem({
             {fileSummary && (
               <div className="mb-3 flex gap-4 rounded-md bg-muted/80 px-4 py-2 text-center text-xs">
                 <div>
-                  <div className="text-muted-foreground/60">Files</div>
+                  <div className="text-muted-foreground/60">{t('history.files')}</div>
                   <div className="font-semibold text-foreground">{fileSummary.totalFiles}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground/60">Added</div>
+                  <div className="text-muted-foreground/60">{t('history.added')}</div>
                   <div className="font-semibold text-green-600 dark:text-green-400">+{fileSummary.totalInsertions}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground/60">Removed</div>
+                  <div className="text-muted-foreground/60">{t('history.removed')}</div>
                   <div className="font-semibold text-red-600 dark:text-red-400">-{fileSummary.totalDeletions}</div>
                 </div>
               </div>
@@ -104,7 +106,7 @@ export default function CommitHistoryItem({
             {fileSummary && fileSummary.files.length > 0 && (
               <div className="mb-3">
                 <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-                  Changed Files
+                  {t('history.changedFiles')}
                 </p>
                 <div className="rounded-md border border-border/60">
                   {fileSummary.files.map((file, idx) => (
