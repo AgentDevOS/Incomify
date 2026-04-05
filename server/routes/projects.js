@@ -1,9 +1,15 @@
 import express from 'express';
-import { promises as fs } from 'fs';
+import { existsSync, mkdirSync, promises as fs } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import os from 'os';
+import crypto from 'crypto';
 import { addProjectManually } from '../projects.js';
+import { userDb, userProjectsDb } from '../database/db.js';
+import {
+  getConfiguredWorkspacesRoot,
+  getLegacyWorkspaceRootForUserId,
+  getWorkspaceRootForPublicId,
+} from '../utils/workspace-paths.js';
 
 const router = express.Router();
 
@@ -12,8 +18,95 @@ function sanitizeGitError(message, token) {
   return message.replace(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '***');
 }
 
-// Configure allowed workspace root (defaults to user's home directory)
-export const WORKSPACES_ROOT = process.env.WORKSPACES_ROOT || os.homedir();
+// Configure allowed workspace root. Prefer an explicit env override; otherwise
+// keep browsing inside a dedicated development directory instead of exposing the whole home folder.
+export const WORKSPACES_ROOT = getConfiguredWorkspacesRoot();
+
+if (!existsSync(WORKSPACES_ROOT)) {
+  mkdirSync(WORKSPACES_ROOT, { recursive: true });
+}
+
+function getLegacyWorkspaceRootForUser(userId) {
+  return getLegacyWorkspaceRootForUserId(userId, WORKSPACES_ROOT);
+}
+
+export function getWorkspaceRootForUser(userId) {
+  const publicId = userDb.getPublicId(userId);
+  if (!publicId) {
+    throw new Error(`No public workspace identifier found for user ${String(userId ?? '').trim()}`);
+  }
+
+  return getWorkspaceRootForPublicId(publicId, WORKSPACES_ROOT);
+}
+
+export async function ensureWorkspaceRootForUser(userId) {
+  const legacyWorkspaceRoot = getLegacyWorkspaceRootForUser(userId);
+  const workspaceRoot = getWorkspaceRootForUser(userId);
+
+  if (legacyWorkspaceRoot !== workspaceRoot && existsSync(legacyWorkspaceRoot) && !existsSync(workspaceRoot)) {
+    await fs.mkdir(path.dirname(workspaceRoot), { recursive: true });
+    await fs.rename(legacyWorkspaceRoot, workspaceRoot);
+  }
+
+  if (legacyWorkspaceRoot !== workspaceRoot) {
+    userProjectsDb.migrateProjectPathPrefix(userId, legacyWorkspaceRoot, workspaceRoot);
+  }
+
+  await fs.mkdir(workspaceRoot, { recursive: true });
+  return workspaceRoot;
+}
+
+async function resolveAllowedWorkspaceRoot(userId = null) {
+  if (userId == null) {
+    return fs.realpath(WORKSPACES_ROOT);
+  }
+
+  const userWorkspaceRoot = await ensureWorkspaceRootForUser(userId);
+  return fs.realpath(userWorkspaceRoot);
+}
+
+function generateWorkspaceDirectoryKey() {
+  return crypto.randomBytes(18).toString('base64url');
+}
+
+export async function allocateWorkspaceDirectory(userId, parentPath = null) {
+  const requestedParentPath = parentPath?.trim()
+    ? parentPath
+    : await ensureWorkspaceRootForUser(userId);
+  const validation = await validateWorkspacePath(requestedParentPath, userId);
+
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Invalid workspace parent path');
+  }
+
+  const resolvedParentPath = validation.resolvedPath || path.resolve(requestedParentPath);
+  await fs.mkdir(resolvedParentPath, { recursive: true });
+
+  const parentStats = await fs.stat(resolvedParentPath);
+  if (!parentStats.isDirectory()) {
+    throw new Error('Workspace parent path is not a directory');
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const directoryKey = generateWorkspaceDirectoryKey();
+    const workspacePath = path.join(resolvedParentPath, directoryKey);
+
+    try {
+      await fs.mkdir(workspacePath);
+      return {
+        directoryKey,
+        parentPath: resolvedParentPath,
+        workspacePath,
+      };
+    } catch (error) {
+      if (error.code !== 'EEXIST') {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error('Failed to allocate a unique workspace directory');
+}
 
 // System-critical paths that should never be used as workspace directories
 export const FORBIDDEN_PATHS = [
@@ -46,16 +139,22 @@ export const FORBIDDEN_PATHS = [
 /**
  * Validates that a path is safe for workspace operations
  * @param {string} requestedPath - The path to validate
+ * @param {number|string|null} userId - Optional authenticated user ID for per-user workspace scoping
  * @returns {Promise<{valid: boolean, resolvedPath?: string, error?: string}>}
  */
-export async function validateWorkspacePath(requestedPath) {
+export async function validateWorkspacePath(requestedPath, userId = null) {
   try {
     // Resolve to absolute path
     let absolutePath = path.resolve(requestedPath);
+    const resolvedWorkspaceRoot = await resolveAllowedWorkspaceRoot(userId);
+    const normalizedWorkspaceRoot = path.normalize(resolvedWorkspaceRoot);
 
     // Check if path is a forbidden system directory
     const normalizedPath = path.normalize(absolutePath);
-    if (FORBIDDEN_PATHS.includes(normalizedPath) || normalizedPath === '/') {
+    const isUnderAllowedRoot = normalizedPath === normalizedWorkspaceRoot
+      || normalizedPath.startsWith(normalizedWorkspaceRoot + path.sep);
+
+    if (!isUnderAllowedRoot && (FORBIDDEN_PATHS.includes(normalizedPath) || normalizedPath === '/')) {
       return {
         valid: false,
         error: 'Cannot use system-critical directories as workspace locations'
@@ -64,8 +163,8 @@ export async function validateWorkspacePath(requestedPath) {
 
     // Additional check for paths starting with forbidden directories
     for (const forbidden of FORBIDDEN_PATHS) {
-      if (normalizedPath === forbidden ||
-          normalizedPath.startsWith(forbidden + path.sep)) {
+      if (!isUnderAllowedRoot && (normalizedPath === forbidden ||
+          normalizedPath.startsWith(forbidden + path.sep))) {
         // Exception: /var/tmp and similar user-accessible paths might be allowed
         // but /var itself and most /var subdirectories should be blocked
         if (forbidden === '/var' &&
@@ -110,15 +209,12 @@ export async function validateWorkspacePath(requestedPath) {
       }
     }
 
-    // Resolve the workspace root to its real path
-    const resolvedWorkspaceRoot = await fs.realpath(WORKSPACES_ROOT);
-
     // Ensure the resolved path is contained within the allowed workspace root
     if (!realPath.startsWith(resolvedWorkspaceRoot + path.sep) &&
         realPath !== resolvedWorkspaceRoot) {
       return {
         valid: false,
-        error: `Workspace path must be within the allowed workspace root: ${WORKSPACES_ROOT}`
+        error: `Workspace path must be within the allowed workspace root: ${resolvedWorkspaceRoot}`
       };
     }
 
@@ -167,77 +263,77 @@ export async function validateWorkspacePath(requestedPath) {
  *
  * Body:
  * - workspaceType: 'existing' | 'new'
- * - path: string (workspace path)
+ * - path?: string (optional parent path inside the authenticated user's workspace root)
+ * - name?: string (display name / requested project name)
  * - githubUrl?: string (optional, for new workspaces)
  * - githubTokenId?: number (optional, ID of stored token)
  * - newGithubToken?: string (optional, one-time token)
  */
 router.post('/create-workspace', async (req, res) => {
   try {
-    const { workspaceType, path: workspacePath, githubUrl, githubTokenId, newGithubToken } = req.body;
+    const { workspaceType, path: workspacePath, name: workspaceName, githubUrl, githubTokenId, newGithubToken } = req.body;
+    const requestedWorkspacePath = typeof workspacePath === 'string' ? workspacePath.trim() : '';
+    const requestedWorkspaceName = typeof workspaceName === 'string' ? workspaceName.trim() : '';
 
     // Validate required fields
-    if (!workspaceType || !workspacePath) {
-      return res.status(400).json({ error: 'workspaceType and path are required' });
+    if (!workspaceType) {
+      return res.status(400).json({ error: 'workspaceType is required' });
     }
 
     if (!['existing', 'new'].includes(workspaceType)) {
       return res.status(400).json({ error: 'workspaceType must be "existing" or "new"' });
     }
 
-    // Validate path safety before any operations
-    const validation = await validateWorkspacePath(workspacePath);
-    if (!validation.valid) {
-      return res.status(400).json({
-        error: 'Invalid workspace path',
-        details: validation.error
-      });
-    }
-
-    const absolutePath = validation.resolvedPath;
-
-    // Handle existing workspace
     if (workspaceType === 'existing') {
-      // Check if the path exists
-      try {
-        await fs.access(absolutePath);
-        const stats = await fs.stat(absolutePath);
-
-        if (!stats.isDirectory()) {
-          return res.status(400).json({ error: 'Path exists but is not a directory' });
-        }
-      } catch (error) {
-        if (error.code === 'ENOENT') {
-          return res.status(404).json({ error: 'Workspace path does not exist' });
-        }
-        throw error;
+      if (!requestedWorkspaceName) {
+        return res.status(400).json({ error: 'name is required for workspace creation' });
       }
 
-      // Add the existing workspace to the project list
-      const project = await addProjectManually(absolutePath);
+      const managedWorkspace = await allocateWorkspaceDirectory(req.user.id);
+      const project = await addProjectManually(
+        managedWorkspace.workspacePath,
+        requestedWorkspaceName,
+        req.user.id,
+      );
 
       return res.json({
         success: true,
         project,
-        message: 'Existing workspace added successfully'
+        message: 'Workspace created successfully'
       });
     }
 
-    // Handle new workspace creation
     if (workspaceType === 'new') {
-      // Create the directory if it doesn't exist
-      await fs.mkdir(absolutePath, { recursive: true });
+      if (!requestedWorkspaceName) {
+        return res.status(400).json({ error: 'name is required for workspace creation' });
+      }
 
-      // If GitHub URL is provided, clone the repository
+      let requestedParentPath = null;
+      if (requestedWorkspacePath) {
+        const validation = await validateWorkspacePath(requestedWorkspacePath, req.user.id);
+        if (!validation.valid) {
+          return res.status(400).json({
+            error: 'Invalid workspace path',
+            details: validation.error
+          });
+        }
+
+        requestedParentPath = validation.resolvedPath || requestedWorkspacePath;
+      }
+
+      if (requestedParentPath) {
+        await fs.mkdir(requestedParentPath, { recursive: true });
+      }
+
+      const managedWorkspace = await allocateWorkspaceDirectory(req.user.id, requestedParentPath);
+      const absolutePath = managedWorkspace.workspacePath;
+
       if (githubUrl) {
         let githubToken = null;
 
-        // Get GitHub token if needed
         if (githubTokenId) {
-          // Fetch token from database
           const token = await getGithubTokenById(githubTokenId, req.user.id);
           if (!token) {
-            // Clean up created directory
             await fs.rm(absolutePath, { recursive: true, force: true });
             return res.status(404).json({ error: 'GitHub token not found' });
           }
@@ -251,7 +347,6 @@ router.post('/create-workspace', async (req, res) => {
         const repoName = normalizedUrl.split('/').pop() || 'repository';
         const clonePath = path.join(absolutePath, repoName);
 
-        // Check if clone destination already exists to prevent data loss
         try {
           await fs.access(clonePath);
           return res.status(409).json({
@@ -262,24 +357,18 @@ router.post('/create-workspace', async (req, res) => {
           // Directory doesn't exist, which is what we want
         }
 
-        // Clone the repository into a subfolder
         try {
           await cloneGitHubRepository(githubUrl, clonePath, githubToken);
         } catch (error) {
-          // Only clean up if clone created partial data (check if dir exists and is empty or partial)
           try {
-            const stats = await fs.stat(clonePath);
-            if (stats.isDirectory()) {
-              await fs.rm(clonePath, { recursive: true, force: true });
-            }
-          } catch (cleanupError) {
-            // Directory doesn't exist or cleanup failed - ignore
+            await fs.rm(absolutePath, { recursive: true, force: true });
+          } catch {
+            // ignore cleanup failure
           }
           throw new Error(`Failed to clone repository: ${error.message}`);
         }
 
-        // Add the cloned repo path to the project list
-        const project = await addProjectManually(clonePath);
+        const project = await addProjectManually(clonePath, requestedWorkspaceName, req.user.id);
 
         return res.json({
           success: true,
@@ -288,8 +377,7 @@ router.post('/create-workspace', async (req, res) => {
         });
       }
 
-      // Add the new workspace to the project list (no clone)
-      const project = await addProjectManually(absolutePath);
+      const project = await addProjectManually(absolutePath, requestedWorkspaceName, req.user.id);
 
       return res.json({
         success: true,
@@ -333,7 +421,9 @@ async function getGithubTokenById(tokenId, userId) {
  * GET /api/projects/clone-progress
  */
 router.get('/clone-progress', async (req, res) => {
-  const { path: workspacePath, githubUrl, githubTokenId, newGithubToken } = req.query;
+  const { path: workspacePath, name: workspaceName, githubUrl, githubTokenId, newGithubToken } = req.query;
+  const requestedWorkspacePath = typeof workspacePath === 'string' ? workspacePath.trim() : '';
+  const requestedWorkspaceName = typeof workspaceName === 'string' ? workspaceName.trim() : '';
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -345,22 +435,36 @@ router.get('/clone-progress', async (req, res) => {
   };
 
   try {
-    if (!workspacePath || !githubUrl) {
-      sendEvent('error', { message: 'workspacePath and githubUrl are required' });
+    if (!githubUrl) {
+      sendEvent('error', { message: 'githubUrl is required' });
       res.end();
       return;
     }
 
-    const validation = await validateWorkspacePath(workspacePath);
-    if (!validation.valid) {
-      sendEvent('error', { message: validation.error });
+    if (!requestedWorkspaceName) {
+      sendEvent('error', { message: 'name is required for workspace creation' });
       res.end();
       return;
     }
 
-    const absolutePath = validation.resolvedPath;
+    let requestedParentPath = null;
+    if (requestedWorkspacePath) {
+      const validation = await validateWorkspacePath(requestedWorkspacePath, req.user.id);
+      if (!validation.valid) {
+        sendEvent('error', { message: validation.error });
+        res.end();
+        return;
+      }
 
-    await fs.mkdir(absolutePath, { recursive: true });
+      requestedParentPath = validation.resolvedPath || requestedWorkspacePath;
+    }
+
+    if (requestedParentPath) {
+      await fs.mkdir(requestedParentPath, { recursive: true });
+    }
+
+    const managedWorkspace = await allocateWorkspaceDirectory(req.user.id, requestedParentPath);
+    const absolutePath = managedWorkspace.workspacePath;
 
     let githubToken = null;
     if (githubTokenId) {
@@ -432,7 +536,7 @@ router.get('/clone-progress', async (req, res) => {
     gitProcess.on('close', async (code) => {
       if (code === 0) {
         try {
-          const project = await addProjectManually(clonePath);
+          const project = await addProjectManually(clonePath, requestedWorkspaceName, req.user.id);
           sendEvent('complete', { project, message: 'Repository cloned successfully' });
         } catch (error) {
           sendEvent('error', { message: `Clone succeeded but failed to add project: ${error.message}` });
@@ -450,7 +554,7 @@ router.get('/clone-progress', async (req, res) => {
           errorMessage = sanitizedError;
         }
         try {
-          await fs.rm(clonePath, { recursive: true, force: true });
+          await fs.rm(absolutePath, { recursive: true, force: true });
         } catch (cleanupError) {
           console.error('Failed to clean up after clone failure:', sanitizeGitError(cleanupError.message, githubToken));
         }

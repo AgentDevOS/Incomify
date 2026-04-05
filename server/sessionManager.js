@@ -25,9 +25,10 @@ class SessionManager {
   }
 
   // Create a new session
-  createSession(sessionId, projectPath) {
+  createSession(sessionId, projectPath, userId = null) {
     const session = {
       id: sessionId,
+      userId,
       projectPath: projectPath,
       messages: [],
       createdAt: new Date(),
@@ -47,12 +48,20 @@ class SessionManager {
   }
 
   // Add a message to session
-  addMessage(sessionId, role, content) {
+  addMessage(sessionId, role, content, options = {}) {
+    const { userId = null, projectPath = '' } = options;
     let session = this.sessions.get(sessionId);
 
     if (!session) {
       // Create session if it doesn't exist
-      session = this.createSession(sessionId, '');
+      session = this.createSession(sessionId, projectPath, userId);
+    } else {
+      if (session.userId == null && userId != null) {
+        session.userId = userId;
+      }
+      if (!session.projectPath && projectPath) {
+        session.projectPath = projectPath;
+      }
     }
 
     const message = {
@@ -70,21 +79,32 @@ class SessionManager {
   }
 
   // Get session by ID
-  getSession(sessionId) {
-    return this.sessions.get(sessionId);
+  getSession(sessionId, userId = null) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return undefined;
+    }
+
+    if (userId == null || session.userId == null || session.userId === userId) {
+      return session;
+    }
+
+    return undefined;
   }
 
   // Get all sessions for a project
-  getProjectSessions(projectPath) {
+  getProjectSessions(projectPath, userId = null) {
     const sessions = [];
 
-    for (const [id, session] of this.sessions) {
-      if (session.projectPath === projectPath) {
+    for (const [, session] of this.sessions) {
+      const userMatches = userId == null || session.userId == null || session.userId === userId;
+      if (userMatches && session.projectPath === projectPath) {
         sessions.push({
           id: session.id,
           summary: this.getSessionSummary(session),
           messageCount: session.messages.length,
-          lastActivity: session.lastActivity
+          lastActivity: session.lastActivity,
+          userId: session.userId ?? null,
         });
       }
     }
@@ -168,6 +188,7 @@ class SessionManager {
             const session = JSON.parse(data);
 
             // Convert dates
+            session.userId = session.userId ?? null;
             session.createdAt = new Date(session.createdAt);
             session.lastActivity = new Date(session.lastActivity);
             session.messages.forEach(msg => {
@@ -192,7 +213,12 @@ class SessionManager {
   }
 
   // Delete a session
-  async deleteSession(sessionId) {
+  async deleteSession(sessionId, userId = null) {
+    const session = this.getSession(sessionId, userId);
+    if (!session) {
+      return false;
+    }
+
     this.sessions.delete(sessionId);
 
     try {
@@ -201,11 +227,13 @@ class SessionManager {
     } catch (error) {
       // console.error('Error deleting session file:', error);
     }
+
+    return true;
   }
 
   // Get session messages for display
-  getSessionMessages(sessionId) {
-    const session = this.sessions.get(sessionId);
+  getSessionMessages(sessionId, userId = null) {
+    const session = this.getSession(sessionId, userId);
     if (!session) return [];
 
     return session.messages.map(msg => ({

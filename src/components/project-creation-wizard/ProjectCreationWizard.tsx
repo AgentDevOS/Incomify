@@ -84,7 +84,11 @@ export default function ProjectCreationWizard({
 
     if (step === 2) {
       if (!formState.workspacePath.trim()) {
-        setError(t('projectWizard.errors.providePath'));
+        setError(
+          t('projectWizard.errors.provideWorkspaceName', {
+            defaultValue: 'Please provide a project name',
+          }),
+        );
         return;
       }
       setStep(3);
@@ -125,7 +129,7 @@ export default function ProjectCreationWizard({
 
       const project = await createWorkspaceRequest({
         workspaceType: formState.workspaceType,
-        path: formState.workspacePath.trim(),
+        name: formState.workspacePath.trim(),
       });
 
       onProjectCreated?.(project);

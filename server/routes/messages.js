@@ -11,6 +11,7 @@
 
 import express from 'express';
 import { getProvider, getAllProviders } from '../providers/registry.js';
+import { ensureSessionAccess } from '../projects.js';
 
 const router = express.Router();
 
@@ -44,9 +45,14 @@ router.get('/:sessionId/messages', async (req, res) => {
       return res.status(400).json({ error: `Unknown provider: ${provider}. Available: ${available}` });
     }
 
-    const result = await adapter.fetchHistory(sessionId, {
+    const access = await ensureSessionAccess(sessionId, provider, req.user?.id ?? null, {
       projectName,
       projectPath,
+    });
+
+    const result = await adapter.fetchHistory(sessionId, {
+      projectName: access.projectName || projectName,
+      projectPath: access.projectPath || projectPath,
       limit,
       offset,
     });

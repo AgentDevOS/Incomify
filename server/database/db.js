@@ -4,6 +4,12 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import {
+  getConfiguredWorkspacesRoot,
+  getLegacyWorkspaceRootForUserId,
+  getWorkspaceRootForPublicId,
+  normalizeLegacyWorkspacePath,
+} from '../utils/workspace-paths.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -21,6 +27,10 @@ const c = {
     bright: (text) => `${colors.bright}${text}${colors.reset}`,
     dim: (text) => `${colors.dim}${text}${colors.reset}`,
 };
+
+function generateUserPublicId() {
+  return `usr_${crypto.randomBytes(12).toString('base64url')}`;
+}
 
 // Use DATABASE_PATH environment variable if set, otherwise use default location
 const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'auth.db');
@@ -68,6 +78,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS app_config (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+function ensureUserPublicId(userId) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const publicId = generateUserPublicId();
+    try {
+      db.prepare('UPDATE users SET public_id = ? WHERE id = ?').run(publicId, userId);
+      return publicId;
+    } catch (error) {
+      if (error.code !== 'SQLITE_CONSTRAINT_UNIQUE') {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(`Failed to allocate a unique public_id for user ${userId}`);
+}
+
 // Show app installation path prominently
 const appInstallPath = path.join(__dirname, '../..');
 console.log('');
@@ -100,6 +126,17 @@ const runMigrations = () => {
       db.exec('ALTER TABLE users ADD COLUMN has_completed_onboarding BOOLEAN DEFAULT 0');
     }
 
+    if (!columnNames.includes('public_id')) {
+      console.log('Running migration: Adding public_id column');
+      db.exec('ALTER TABLE users ADD COLUMN public_id TEXT');
+    }
+
+    const usersMissingPublicId = db.prepare("SELECT id FROM users WHERE public_id IS NULL OR TRIM(public_id) = ''").all();
+    for (const row of usersMissingPublicId) {
+      ensureUserPublicId(row.id);
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id)');
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS user_notification_preferences (
         user_id INTEGER PRIMARY KEY,
@@ -129,6 +166,22 @@ const runMigrations = () => {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS user_projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        project_name TEXT NOT NULL,
+        project_path TEXT NOT NULL,
+        display_name TEXT,
+        source TEXT NOT NULL DEFAULT 'discovered',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(user_id, project_name)
+      )
+    `);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id)');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_lookup ON user_projects(user_id, project_name)');
     // Create app_config table if it doesn't exist (for existing installations)
     db.exec(`CREATE TABLE IF NOT EXISTS app_config (
       key TEXT PRIMARY KEY,
@@ -183,9 +236,20 @@ const userDb = {
   // Create a new user
   createUser: (username, passwordHash) => {
     try {
-      const stmt = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)');
-      const result = stmt.run(username, passwordHash);
-      return { id: result.lastInsertRowid, username };
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const publicId = generateUserPublicId();
+        try {
+          const stmt = db.prepare('INSERT INTO users (username, password_hash, public_id) VALUES (?, ?, ?)');
+          const result = stmt.run(username, passwordHash, publicId);
+          return { id: result.lastInsertRowid, username, publicId };
+        } catch (err) {
+          if (err.code !== 'SQLITE_CONSTRAINT_UNIQUE' || !String(err.message || '').includes('users.public_id')) {
+            throw err;
+          }
+        }
+      }
+
+      throw new Error('Failed to allocate a unique public_id for user');
     } catch (err) {
       throw err;
     }
@@ -194,7 +258,7 @@ const userDb = {
   // Get user by username
   getUserByUsername: (username) => {
     try {
-      const row = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username);
+      const row = db.prepare('SELECT *, public_id AS publicId FROM users WHERE username = ? AND is_active = 1').get(username);
       return row;
     } catch (err) {
       throw err;
@@ -213,7 +277,7 @@ const userDb = {
   // Get user by ID
   getUserById: (userId) => {
     try {
-      const row = db.prepare('SELECT id, username, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
+      const row = db.prepare('SELECT id, username, public_id AS publicId, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
       return row;
     } catch (err) {
       throw err;
@@ -222,8 +286,26 @@ const userDb = {
 
   getFirstUser: () => {
     try {
-      const row = db.prepare('SELECT id, username, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
+      const row = db.prepare('SELECT id, username, public_id AS publicId, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
       return row;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  getActiveUserCount: () => {
+    try {
+      const row = db.prepare('SELECT COUNT(*) AS count FROM users WHERE is_active = 1').get();
+      return row?.count || 0;
+    } catch (err) {
+      throw err;
+    }
+  },
+
+  getPublicId: (userId) => {
+    try {
+      const row = db.prepare('SELECT public_id AS publicId FROM users WHERE id = ?').get(userId);
+      return row?.publicId || null;
     } catch (err) {
       throw err;
     }
@@ -299,7 +381,7 @@ const apiKeysDb = {
   validateApiKey: (apiKey) => {
     try {
       const row = db.prepare(`
-        SELECT u.id, u.username, ak.id as api_key_id
+        SELECT u.id, u.username, u.public_id AS publicId, ak.id as api_key_id
         FROM api_keys ak
         JOIN users u ON ak.user_id = u.id
         WHERE ak.api_key = ? AND ak.is_active = 1 AND u.is_active = 1
@@ -569,6 +651,94 @@ function applyCustomSessionNames(sessions, provider) {
   }
 }
 
+function normalizeProjectPathForUser(userId, projectPath) {
+  if (!projectPath || typeof projectPath !== 'string') {
+    return projectPath;
+  }
+
+  const publicId = userDb.getPublicId(userId);
+  if (!publicId) {
+    return projectPath;
+  }
+
+  const workspacesRoot = getConfiguredWorkspacesRoot();
+  const legacyRoot = getLegacyWorkspaceRootForUserId(userId, workspacesRoot);
+  const workspaceRoot = getWorkspaceRootForPublicId(publicId, workspacesRoot);
+  return normalizeLegacyWorkspacePath(projectPath, legacyRoot, workspaceRoot);
+}
+
+const userProjectsDb = {
+  upsertProject: ({ userId, projectName, projectPath, displayName = null, source = 'discovered' }) => {
+    db.prepare(
+      `INSERT INTO user_projects (user_id, project_name, project_path, display_name, source, updated_at)
+       VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(user_id, project_name) DO UPDATE SET
+         project_path = excluded.project_path,
+         display_name = COALESCE(excluded.display_name, user_projects.display_name),
+         source = excluded.source,
+         updated_at = CURRENT_TIMESTAMP`
+    ).run(userId, projectName, projectPath, displayName, source);
+
+    return userProjectsDb.getProject(userId, projectName);
+  },
+
+  getProject: (userId, projectName) => {
+    const row = db.prepare(
+      'SELECT * FROM user_projects WHERE user_id = ? AND project_name = ?'
+    ).get(userId, projectName);
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      ...row,
+      project_path: normalizeProjectPathForUser(userId, row.project_path),
+    };
+  },
+
+  getProjectsByUser: (userId) => {
+    return db.prepare(
+      'SELECT * FROM user_projects WHERE user_id = ? ORDER BY datetime(updated_at) DESC, id DESC'
+    ).all(userId).map((row) => ({
+      ...row,
+      project_path: normalizeProjectPathForUser(userId, row.project_path),
+    }));
+  },
+
+  countProjectsForUser: (userId) => {
+    const row = db.prepare('SELECT COUNT(*) AS count FROM user_projects WHERE user_id = ?').get(userId);
+    return row?.count || 0;
+  },
+
+  setDisplayName: (userId, projectName, displayName = null) => {
+    const result = db.prepare(
+      'UPDATE user_projects SET display_name = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND project_name = ?'
+    ).run(displayName, userId, projectName);
+    return result.changes > 0;
+  },
+
+  deleteProject: (userId, projectName) => {
+    const result = db.prepare('DELETE FROM user_projects WHERE user_id = ? AND project_name = ?').run(userId, projectName);
+    return result.changes > 0;
+  },
+
+  migrateProjectPathPrefix: (userId, oldPrefix, newPrefix) => {
+    const rows = db.prepare(
+      'SELECT id, project_path FROM user_projects WHERE user_id = ? AND (project_path = ? OR project_path LIKE ?)'
+    ).all(userId, oldPrefix, `${oldPrefix}${path.sep}%`);
+
+    for (const row of rows) {
+      const nextPath = row.project_path.replace(oldPrefix, newPrefix);
+      db.prepare(
+        'UPDATE user_projects SET project_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+      ).run(nextPath, row.id);
+    }
+
+    return rows.length;
+  },
+};
+
 // App config database operations
 const appConfigDb = {
   get: (key) => {
@@ -621,6 +791,7 @@ export {
   userDb,
   apiKeysDb,
   credentialsDb,
+  userProjectsDb,
   notificationPreferencesDb,
   pushSubscriptionsDb,
   sessionNamesDb,

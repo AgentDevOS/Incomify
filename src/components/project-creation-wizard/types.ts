@@ -23,6 +23,7 @@ export type CredentialsResponse = {
 
 export type BrowseFilesystemResponse = {
   path?: string;
+  rootPath?: string;
   suggestions?: FolderSuggestion[];
   error?: string;
 };
@@ -36,7 +37,8 @@ export type CreateFolderResponse = {
 
 export type CreateWorkspacePayload = {
   workspaceType: WorkspaceType;
-  path: string;
+  path?: string;
+  name?: string;
 };
 
 export type CreateWorkspaceResponse = {

@@ -8,6 +8,7 @@ import { open } from 'sqlite';
 import crypto from 'crypto';
 import { CURSOR_MODELS } from '../../shared/modelConstants.js';
 import { applyCustomSessionNames } from '../database/db.js';
+import { ensureProjectPathAccess } from '../projects.js';
 
 const router = express.Router();
 
@@ -348,9 +349,17 @@ router.post('/mcp/add-json', async (req, res) => {
 router.get('/sessions', async (req, res) => {
   try {
     const { projectPath } = req.query;
+    if (!projectPath || typeof projectPath !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'projectPath query parameter required'
+      });
+    }
+
+    await ensureProjectPathAccess(projectPath, req.user?.id ?? null);
     
     // Calculate cwdID hash for the project path (Cursor uses MD5 hash)
-    const cwdId = crypto.createHash('md5').update(projectPath || process.cwd()).digest('hex');
+    const cwdId = crypto.createHash('md5').update(projectPath).digest('hex');
     const cursorChatsPath = path.join(os.homedir(), '.cursor', 'chats', cwdId);
     
     
@@ -584,9 +593,17 @@ router.get('/sessions/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { projectPath } = req.query;
+    if (!projectPath || typeof projectPath !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'projectPath query parameter required'
+      });
+    }
+
+    await ensureProjectPathAccess(projectPath, req.user?.id ?? null);
     
     // Calculate cwdID hash for the project path
-    const cwdId = crypto.createHash('md5').update(projectPath || process.cwd()).digest('hex');
+    const cwdId = crypto.createHash('md5').update(projectPath).digest('hex');
     const storeDbPath = path.join(os.homedir(), '.cursor', 'chats', cwdId, sessionId, 'store.db');
     
     

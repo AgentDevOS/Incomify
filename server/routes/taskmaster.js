@@ -351,7 +351,7 @@ router.get('/detect-all', async (req, res) => {
     try {
         // Import getProjects from the projects module
         const { getProjects } = await import('../projects.js');
-        const projects = await getProjects();
+        const projects = await getProjects(req.user.id);
 
         // Run detection for all projects in parallel
         const detectionPromises = projects.map(async (project) => {

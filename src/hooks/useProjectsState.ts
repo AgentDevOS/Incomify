@@ -436,9 +436,16 @@ export function useProjectsState({
         prevProjects.map((project) => ({
           ...project,
           sessions: project.sessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
+          cursorSessions: project.cursorSessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
+          codexSessions: project.codexSessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
+          geminiSessions: project.geminiSessions?.filter((session) => session.id !== sessionIdToDelete) ?? [],
           sessionMeta: {
             ...project.sessionMeta,
-            total: Math.max(0, (project.sessionMeta?.total as number | undefined ?? 0) - 1),
+            total: Math.max(
+              0,
+              (project.sessionMeta?.total as number | undefined ?? 0) -
+              (project.sessions?.some((session) => session.id === sessionIdToDelete) ? 1 : 0),
+            ),
           },
         })),
       );

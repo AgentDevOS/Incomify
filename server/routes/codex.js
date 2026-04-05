@@ -4,7 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import os from 'os';
 import TOML from '@iarna/toml';
-import { getCodexSessions, deleteCodexSession } from '../projects.js';
+import { deleteCodexSession, ensureProjectPathAccess, ensureSessionAccess, getCodexSessions } from '../projects.js';
 import { applyCustomSessionNames, sessionNamesDb } from '../database/db.js';
 
 const router = express.Router();
@@ -59,6 +59,8 @@ router.get('/sessions', async (req, res) => {
       return res.status(400).json({ success: false, error: 'projectPath query parameter required' });
     }
 
+    await ensureProjectPathAccess(String(projectPath), req.user?.id ?? null);
+
     const sessions = await getCodexSessions(projectPath);
     applyCustomSessionNames(sessions, 'codex');
     res.json({ success: true, sessions });
@@ -71,6 +73,9 @@ router.get('/sessions', async (req, res) => {
 router.delete('/sessions/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const projectName = typeof req.query.projectName === 'string' ? req.query.projectName : '';
+
+    await ensureSessionAccess(sessionId, 'codex', req.user?.id ?? null, { projectName });
     await deleteCodexSession(sessionId);
     sessionNamesDb.deleteName(sessionId, 'codex');
     res.json({ success: true });

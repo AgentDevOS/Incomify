@@ -76,17 +76,17 @@ export const api = {
     authenticatedFetch(`/api/projects/${projectName}/sessions/${sessionId}`, {
       method: 'DELETE',
     }),
-  renameSession: (sessionId, summary, provider) =>
+  renameSession: (sessionId, summary, provider, projectName = '', projectPath = '') =>
     authenticatedFetch(`/api/sessions/${sessionId}/rename`, {
       method: 'PUT',
-      body: JSON.stringify({ summary, provider }),
+      body: JSON.stringify({ summary, provider, projectName, projectPath }),
     }),
-  deleteCodexSession: (sessionId) =>
-    authenticatedFetch(`/api/codex/sessions/${sessionId}`, {
+  deleteCodexSession: (sessionId, projectName = '') =>
+    authenticatedFetch(`/api/codex/sessions/${sessionId}${projectName ? `?projectName=${encodeURIComponent(projectName)}` : ''}`, {
       method: 'DELETE',
     }),
-  deleteGeminiSession: (sessionId) =>
-    authenticatedFetch(`/api/gemini/sessions/${sessionId}`, {
+  deleteGeminiSession: (sessionId, projectName = '') =>
+    authenticatedFetch(`/api/gemini/sessions/${sessionId}${projectName ? `?projectName=${encodeURIComponent(projectName)}` : ''}`, {
       method: 'DELETE',
     }),
   deleteProject: (projectName, force = false) =>

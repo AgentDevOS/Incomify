@@ -34,6 +34,16 @@ export default function StepReview({
     return t('projectWizard.step3.noAuthentication');
   }, [formState, selectedTokenName, t]);
 
+  const workspacePathLabel = useMemo(() => {
+    if (formState.workspaceType === 'new') {
+      return t('projectWizard.step3.autoManagedLocation', {
+        defaultValue: 'Auto-managed inside your isolated workspace root',
+      });
+    }
+
+    return formState.workspacePath;
+  }, [formState.workspacePath, formState.workspaceType, t]);
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
@@ -54,9 +64,20 @@ export default function StepReview({
           </div>
 
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600 dark:text-gray-400">{t('projectWizard.step3.path')}</span>
+            <span className="text-gray-600 dark:text-gray-400">
+              {t('projectWizard.step3.workspaceName', { defaultValue: 'Project Name:' })}
+            </span>
             <span className="break-all font-mono text-xs text-gray-900 dark:text-white">
               {formState.workspacePath}
+            </span>
+          </div>
+
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600 dark:text-gray-400">
+              {t('projectWizard.step3.storagePath', { defaultValue: 'Storage:' })}
+            </span>
+            <span className="break-all font-mono text-xs text-gray-900 dark:text-white">
+              {workspacePathLabel}
             </span>
           </div>
 

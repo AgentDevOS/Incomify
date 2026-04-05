@@ -44,7 +44,7 @@ import pty from 'node-pty';
 import fetch from 'node-fetch';
 import mime from 'mime-types';
 
-import { getProjects, getSessions, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, searchConversations } from './projects.js';
+import { getProjects, getSessions, renameProject, deleteSession, deleteProject, addProjectManually, extractProjectDirectory, clearProjectDirectoryCache, ensureSessionAccess, searchConversations } from './projects.js';
 import { queryClaudeSDK, abortClaudeSDKSession, isClaudeSDKSessionActive, getActiveClaudeSDKSessions, resolveToolApproval, getPendingApprovalsForSession, reconnectSessionWriter } from './claude-sdk.js';
 import { spawnCursor, abortCursorSession, isCursorSessionActive, getActiveCursorSessions } from './cursor-cli.js';
 import { queryCodex, abortCodexSession, isCodexSessionActive, getActiveCodexSessions } from './openai-codex.js';
@@ -59,7 +59,7 @@ import mcpUtilsRoutes from './routes/mcp-utils.js';
 import commandsRoutes from './routes/commands.js';
 import settingsRoutes from './routes/settings.js';
 import agentRoutes from './routes/agent.js';
-import projectsRoutes, { WORKSPACES_ROOT, validateWorkspacePath } from './routes/projects.js';
+import projectsRoutes, { WORKSPACES_ROOT, getWorkspaceRootForUser, ensureWorkspaceRootForUser, validateWorkspacePath } from './routes/projects.js';
 import cliAuthRoutes from './routes/cli-auth.js';
 import userRoutes from './routes/user.js';
 import codexRoutes from './routes/codex.js';
@@ -99,14 +99,15 @@ let projectsWatcherDebounceTimer = null;
 const connectedClients = new Set();
 let isGetProjectsRunning = false; // Flag to prevent reentrant calls
 
-// Broadcast progress to all connected WebSocket clients
-function broadcastProgress(progress) {
+// Broadcast progress to WebSocket clients, optionally scoped per user
+function broadcastProgress(progress, userId = null) {
     const message = JSON.stringify({
         type: 'loading_progress',
         ...progress
     });
     connectedClients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
+        const matchesUser = userId == null || client.userId === userId;
+        if (matchesUser && client.readyState === WebSocket.OPEN) {
             client.send(message);
         }
     });
@@ -149,24 +150,36 @@ async function setupProjectsWatcher() {
                 // Clear project directory cache when files change
                 clearProjectDirectoryCache();
 
-                // Get updated projects list
-                const updatedProjects = await getProjects(broadcastProgress);
-
-                // Notify all connected clients about the project changes
-                const updateMessage = JSON.stringify({
-                    type: 'projects_updated',
-                    projects: updatedProjects,
-                    timestamp: new Date().toISOString(),
-                    changeType: eventType,
-                    changedFile: path.relative(rootPath, filePath),
-                    watchProvider: provider
-                });
-
-                connectedClients.forEach(client => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        client.send(updateMessage);
+                const clientsByUser = new Map();
+                connectedClients.forEach((client) => {
+                    if (client.readyState !== WebSocket.OPEN || client.userId == null) {
+                        return;
                     }
+
+                    if (!clientsByUser.has(client.userId)) {
+                        clientsByUser.set(client.userId, []);
+                    }
+
+                    clientsByUser.get(client.userId).push(client);
                 });
+
+                for (const [userId, userClients] of clientsByUser.entries()) {
+                    const updatedProjects = await getProjects(userId, (progress) => broadcastProgress(progress, userId));
+                    const updateMessage = JSON.stringify({
+                        type: 'projects_updated',
+                        projects: updatedProjects,
+                        timestamp: new Date().toISOString(),
+                        changeType: eventType,
+                        changedFile: path.relative(rootPath, filePath),
+                        watchProvider: provider
+                    });
+
+                    userClients.forEach((client) => {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(updateMessage);
+                        }
+                    });
+                }
 
             } catch (error) {
                 console.error('[ERROR] Error handling project changes:', error);
@@ -496,7 +509,7 @@ app.post('/api/system/update', authenticateToken, async (req, res) => {
 
 app.get('/api/projects', authenticateToken, async (req, res) => {
     try {
-        const projects = await getProjects(broadcastProgress);
+        const projects = await getProjects(req.user.id, (progress) => broadcastProgress(progress, req.user.id));
         res.json(projects);
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -506,7 +519,7 @@ app.get('/api/projects', authenticateToken, async (req, res) => {
 app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, res) => {
     try {
         const { limit = 5, offset = 0 } = req.query;
-        const result = await getSessions(req.params.projectName, parseInt(limit), parseInt(offset));
+        const result = await getSessions(req.params.projectName, parseInt(limit), parseInt(offset), req.user.id);
         applyCustomSessionNames(result.sessions, 'claude');
         res.json(result);
     } catch (error) {
@@ -518,7 +531,7 @@ app.get('/api/projects/:projectName/sessions', authenticateToken, async (req, re
 app.put('/api/projects/:projectName/rename', authenticateToken, async (req, res) => {
     try {
         const { displayName } = req.body;
-        await renameProject(req.params.projectName, displayName);
+        await renameProject(req.params.projectName, displayName, req.user.id);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -530,7 +543,7 @@ app.delete('/api/projects/:projectName/sessions/:sessionId', authenticateToken, 
     try {
         const { projectName, sessionId } = req.params;
         console.log(`[API] Deleting session: ${sessionId} from project: ${projectName}`);
-        await deleteSession(projectName, sessionId);
+        await deleteSession(projectName, sessionId, req.user.id);
         sessionNamesDb.deleteName(sessionId, 'claude');
         console.log(`[API] Session ${sessionId} deleted successfully`);
         res.json({ success: true });
@@ -548,7 +561,7 @@ app.put('/api/sessions/:sessionId/rename', authenticateToken, async (req, res) =
         if (!safeSessionId || safeSessionId !== String(sessionId)) {
             return res.status(400).json({ error: 'Invalid sessionId' });
         }
-        const { summary, provider } = req.body;
+        const { summary, provider, projectName = '', projectPath = '' } = req.body;
         if (!summary || typeof summary !== 'string' || summary.trim() === '') {
             return res.status(400).json({ error: 'Summary is required' });
         }
@@ -558,6 +571,7 @@ app.put('/api/sessions/:sessionId/rename', authenticateToken, async (req, res) =
         if (!provider || !VALID_PROVIDERS.includes(provider)) {
             return res.status(400).json({ error: `Provider must be one of: ${VALID_PROVIDERS.join(', ')}` });
         }
+        await ensureSessionAccess(safeSessionId, provider, req.user?.id ?? null, { projectName, projectPath });
         sessionNamesDb.setName(safeSessionId, provider, summary.trim());
         res.json({ success: true });
     } catch (error) {
@@ -571,7 +585,7 @@ app.delete('/api/projects/:projectName', authenticateToken, async (req, res) => 
     try {
         const { projectName } = req.params;
         const force = req.query.force === 'true';
-        await deleteProject(projectName, force);
+        await deleteProject(projectName, force, req.user.id);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -587,7 +601,7 @@ app.post('/api/projects/create', authenticateToken, async (req, res) => {
             return res.status(400).json({ error: 'Project path is required' });
         }
 
-        const project = await addProjectManually(projectPath.trim());
+        const project = await addProjectManually(projectPath.trim(), null, req.user.id);
         res.json({ success: true, project });
     } catch (error) {
         console.error('Error creating project:', error);
@@ -624,7 +638,7 @@ app.get('/api/search/conversations', authenticateToken, async (req, res) => {
             } else {
                 res.write(`event: progress\ndata: ${JSON.stringify({ totalMatches, scannedProjects, totalProjects })}\n\n`);
             }
-        }, abortController.signal);
+        }, abortController.signal, req.user?.id ?? null);
         if (!closed) {
             res.write(`event: done\ndata: {}\n\n`);
         }
@@ -640,13 +654,14 @@ app.get('/api/search/conversations', authenticateToken, async (req, res) => {
     }
 });
 
-const expandWorkspacePath = (inputPath) => {
+const expandWorkspacePath = (inputPath, userId = null) => {
     if (!inputPath) return inputPath;
+    const workspaceRoot = userId == null ? WORKSPACES_ROOT : getWorkspaceRootForUser(userId);
     if (inputPath === '~') {
-        return WORKSPACES_ROOT;
+        return workspaceRoot;
     }
     if (inputPath.startsWith('~/') || inputPath.startsWith('~\\')) {
-        return path.join(WORKSPACES_ROOT, inputPath.slice(2));
+        return path.join(workspaceRoot, inputPath.slice(2));
     }
     return inputPath;
 };
@@ -658,15 +673,15 @@ app.get('/api/browse-filesystem', authenticateToken, async (req, res) => {
 
         console.log('[API] Browse filesystem request for path:', dirPath);
         console.log('[API] WORKSPACES_ROOT is:', WORKSPACES_ROOT);
-        // Default to home directory if no path provided
-        const defaultRoot = WORKSPACES_ROOT;
-        let targetPath = dirPath ? expandWorkspacePath(dirPath) : defaultRoot;
+        // Default to the authenticated user's isolated workspace root if no path is provided.
+        const defaultRoot = await ensureWorkspaceRootForUser(req.user.id);
+        let targetPath = dirPath ? expandWorkspacePath(dirPath, req.user.id) : defaultRoot;
 
         // Resolve and normalize the path
         targetPath = path.resolve(targetPath);
 
         // Security check - ensure path is within allowed workspace root
-        const validation = await validateWorkspacePath(targetPath);
+        const validation = await validateWorkspacePath(targetPath, req.user.id);
         if (!validation.valid) {
             return res.status(403).json({ error: validation.error });
         }
@@ -711,18 +726,11 @@ app.get('/api/browse-filesystem', authenticateToken, async (req, res) => {
         } catch (error) {
             // Use default root as-is if realpath fails
         }
-        if (resolvedPath === resolvedWorkspaceRoot) {
-            const commonDirs = ['Desktop', 'Documents', 'Projects', 'Development', 'Dev', 'Code', 'workspace'];
-            const existingCommon = directories.filter(dir => commonDirs.includes(dir.name));
-            const otherDirs = directories.filter(dir => !commonDirs.includes(dir.name));
-
-            suggestions.push(...existingCommon, ...otherDirs);
-        } else {
-            suggestions.push(...directories);
-        }
+        suggestions.push(...directories);
 
         res.json({
             path: resolvedPath,
+            rootPath: resolvedWorkspaceRoot,
             suggestions: suggestions
         });
 
@@ -738,9 +746,9 @@ app.post('/api/create-folder', authenticateToken, async (req, res) => {
         if (!folderPath) {
             return res.status(400).json({ error: 'Path is required' });
         }
-        const expandedPath = expandWorkspacePath(folderPath);
+        const expandedPath = expandWorkspacePath(folderPath, req.user.id);
         const resolvedInput = path.resolve(expandedPath);
-        const validation = await validateWorkspacePath(resolvedInput);
+        const validation = await validateWorkspacePath(resolvedInput, req.user.id);
         if (!validation.valid) {
             return res.status(403).json({ error: validation.error });
         }
@@ -784,7 +792,7 @@ app.get('/api/projects/:projectName/file', authenticateToken, async (req, res) =
             return res.status(400).json({ error: 'Invalid file path' });
         }
 
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        const projectRoot = await extractProjectDirectory(projectName, req.user.id).catch(() => null);
         if (!projectRoot) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -824,7 +832,7 @@ app.get('/api/projects/:projectName/files/content', authenticateToken, async (re
             return res.status(400).json({ error: 'Invalid file path' });
         }
 
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        const projectRoot = await extractProjectDirectory(projectName, req.user.id).catch(() => null);
         if (!projectRoot) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -881,7 +889,7 @@ app.put('/api/projects/:projectName/file', authenticateToken, async (req, res) =
             return res.status(400).json({ error: 'Content is required' });
         }
 
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        const projectRoot = await extractProjectDirectory(projectName, req.user.id).catch(() => null);
         if (!projectRoot) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -923,7 +931,7 @@ app.get('/api/projects/:projectName/files', authenticateToken, async (req, res) 
         // Use extractProjectDirectory to get the actual project path
         let actualPath;
         try {
-            actualPath = await extractProjectDirectory(req.params.projectName);
+            actualPath = await extractProjectDirectory(req.params.projectName, req.user.id);
         } catch (error) {
             console.error('Error extracting project directory:', error);
             // Fallback to simple dash replacement
@@ -1013,7 +1021,7 @@ app.post('/api/projects/:projectName/files/create', authenticateToken, async (re
         }
 
         // Get project root
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        const projectRoot = await extractProjectDirectory(projectName, req.user.id).catch(() => null);
         if (!projectRoot) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -1086,7 +1094,7 @@ app.put('/api/projects/:projectName/files/rename', authenticateToken, async (req
         }
 
         // Get project root
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        const projectRoot = await extractProjectDirectory(projectName, req.user.id).catch(() => null);
         if (!projectRoot) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -1158,7 +1166,7 @@ app.delete('/api/projects/:projectName/files', authenticateToken, async (req, re
         }
 
         // Get project root
-        const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+        const projectRoot = await extractProjectDirectory(projectName, req.user.id).catch(() => null);
         if (!projectRoot) {
             return res.status(404).json({ error: 'Project not found' });
         }
@@ -1276,7 +1284,7 @@ const uploadFilesHandler = async (req, res) => {
             }
 
             // Get project root
-            const projectRoot = await extractProjectDirectory(projectName).catch(() => null);
+            const projectRoot = await extractProjectDirectory(projectName, req.user.id).catch(() => null);
             if (!projectRoot) {
                 return res.status(404).json({ error: 'Project not found' });
             }
@@ -1477,6 +1485,7 @@ class WebSocketWriter {
 // Handle chat WebSocket connections
 function handleChatConnection(ws, request) {
     console.log('[INFO] Chat WebSocket connected');
+    ws.userId = request?.user?.id ?? request?.user?.userId ?? null;
 
     // Add to connected clients for project updates
     connectedClients.add(ws);
@@ -2324,7 +2333,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
         // Extract actual project path
         let projectPath;
         try {
-            projectPath = await extractProjectDirectory(projectName);
+            projectPath = await extractProjectDirectory(projectName, req.user.id);
         } catch (error) {
             console.error('Error extracting project directory:', error);
             return res.status(500).json({ error: 'Failed to determine project path' });

@@ -419,9 +419,9 @@ export function useSidebarController({
     try {
       let response;
       if (provider === 'codex') {
-        response = await api.deleteCodexSession(sessionId);
+        response = await api.deleteCodexSession(sessionId, projectName);
       } else if (provider === 'gemini') {
-        response = await api.deleteGeminiSession(sessionId);
+        response = await api.deleteGeminiSession(sessionId, projectName);
       } else {
         response = await api.deleteSession(projectName, sessionId);
       }
@@ -553,7 +553,14 @@ export function useSidebarController({
         return;
       }
       try {
-        const response = await api.renameSession(sessionId, trimmed, provider);
+        const project = projects.find((item) => item.name === _projectName) || null;
+        const response = await api.renameSession(
+          sessionId,
+          trimmed,
+          provider,
+          _projectName,
+          project?.fullPath || project?.path || '',
+        );
         if (response.ok) {
           await onRefresh();
         } else {
@@ -568,7 +575,7 @@ export function useSidebarController({
         setEditingSessionName('');
       }
     },
-    [onRefresh, t],
+    [onRefresh, projects, t],
   );
 
   const collapseSidebar = useCallback(() => {
