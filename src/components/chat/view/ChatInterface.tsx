@@ -89,7 +89,6 @@ function ChatInterface({
     totalMessages,
     canAbortSession,
     setCanAbortSession,
-    isUserScrolledUp,
     setIsUserScrolledUp,
     tokenBudget,
     setTokenBudget,
@@ -106,7 +105,6 @@ function ChatInterface({
     createDiff,
     scrollContainerRef,
     scrollToBottom,
-    scrollToBottomAndReset,
     handleScroll,
   } = useChatSessionState({
     selectedProject,
@@ -128,9 +126,6 @@ function ChatInterface({
     textareaRef,
     inputHighlightRef,
     isTextareaExpanded,
-    thinkingMode,
-    setThinkingMode,
-    slashCommandsCount,
     filteredCommands,
     frequentCommands,
     commandQuery,
@@ -138,7 +133,6 @@ function ChatInterface({
     selectedCommandIndex,
     resetCommandMenuState,
     handleCommandSelect,
-    handleToggleCommandMenu,
     showFileDropdown,
     filteredFiles,
     selectedFileIndex,
@@ -159,7 +153,6 @@ function ChatInterface({
     handleTextareaClick,
     handleTextareaInput,
     syncInputOverlayScroll,
-    handleClearInput,
     handleAbortSession,
     handleTranscript,
     handlePermissionDecision,
@@ -334,18 +327,7 @@ function ChatInterface({
           isLoading={isLoading}
           onAbortSession={handleAbortSession}
           provider={provider}
-          permissionMode={permissionMode}
-          onModeSwitch={cyclePermissionMode}
-          thinkingMode={thinkingMode}
-          setThinkingMode={setThinkingMode}
           tokenBudget={tokenBudget}
-          slashCommandsCount={slashCommandsCount}
-          onToggleCommandMenu={handleToggleCommandMenu}
-          hasInput={Boolean(input.trim())}
-          onClearInput={handleClearInput}
-          isUserScrolledUp={isUserScrolledUp}
-          hasMessages={chatMessages.length > 0}
-          onScrollToBottom={scrollToBottomAndReset}
           onSubmit={handleSubmit}
           isDragActive={isDragActive}
           attachedImages={attachedImages}

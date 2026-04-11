@@ -46,8 +46,8 @@ export default function TokenUsagePie({ used, total }: TokenUsagePieProps) {
           strokeLinecap="round"
         />
       </svg>
-      <span title={`${used.toLocaleString()} / ${total.toLocaleString()} tokens`}>
-        {percentage.toFixed(1)}%
+      <span title={`已使用 ${used.toLocaleString()} / ${total.toLocaleString()} 个 token`}>
+        上下文占用 {percentage.toFixed(1)}%
       </span>
     </div>
   );

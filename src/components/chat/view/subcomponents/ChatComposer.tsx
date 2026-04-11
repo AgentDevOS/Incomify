@@ -2,21 +2,20 @@ import { useTranslation } from 'react-i18next';
 import type {
   ChangeEvent,
   ClipboardEvent,
-  Dispatch,
   FormEvent,
   KeyboardEvent,
   MouseEvent,
   ReactNode,
   RefObject,
-  SetStateAction,
   TouchEvent,
 } from 'react';
 import MicButton from '../../../mic-button/view/MicButton';
-import type { PendingPermissionRequest, PermissionMode, Provider } from '../../types/types';
+import type { PendingPermissionRequest, Provider } from '../../types/types';
 import CommandMenu from './CommandMenu';
 import ClaudeStatus from './ClaudeStatus';
 import ImageAttachment from './ImageAttachment';
 import PermissionRequestsBanner from './PermissionRequestsBanner';
+import TokenUsagePie from './TokenUsagePie';
 
 interface MentionableFile {
   name: string;
@@ -44,18 +43,7 @@ interface ChatComposerProps {
   isLoading: boolean;
   onAbortSession: () => void;
   provider: Provider | string;
-  permissionMode: PermissionMode | string;
-  onModeSwitch: () => void;
-  thinkingMode: string;
-  setThinkingMode: Dispatch<SetStateAction<string>>;
   tokenBudget: { used?: number; total?: number } | null;
-  slashCommandsCount: number;
-  onToggleCommandMenu: () => void;
-  hasInput: boolean;
-  onClearInput: () => void;
-  isUserScrolledUp: boolean;
-  hasMessages: boolean;
-  onScrollToBottom: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement> | TouchEvent<HTMLButtonElement>) => void;
   isDragActive: boolean;
   attachedImages: File[];
@@ -101,18 +89,7 @@ export default function ChatComposer({
   isLoading,
   onAbortSession,
   provider,
-  permissionMode,
-  onModeSwitch,
-  thinkingMode,
-  setThinkingMode,
   tokenBudget,
-  slashCommandsCount,
-  onToggleCommandMenu,
-  hasInput,
-  onClearInput,
-  isUserScrolledUp,
-  hasMessages,
-  onScrollToBottom,
   onSubmit,
   isDragActive,
   attachedImages,
@@ -186,8 +163,12 @@ export default function ChatComposer({
           handlePermissionDecision={handlePermissionDecision}
           handleGrantToolPermission={handleGrantToolPermission}
         />
-
-        {/* Temporarily hide the input controls row. */}
+        <div className="flex justify-center py-1">
+          <TokenUsagePie
+            used={tokenBudget?.used || 0}
+            total={tokenBudget?.total || parseInt(import.meta.env.VITE_CONTEXT_WINDOW) || 160000}
+          />
+        </div>
       </div>
 
       {!hasQuestionPanel && <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative mx-auto max-w-4xl">
