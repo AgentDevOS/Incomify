@@ -15,9 +15,12 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import crypto from 'crypto';
 import { promises as fs } from 'fs';
+import { existsSync, realpathSync } from 'fs';
 import path from 'path';
 import os from 'os';
+import { execFileSync, spawn } from 'child_process';
 import { CLAUDE_MODELS } from '../shared/modelConstants.js';
+import { userDb } from './database/db.js';
 import {
   createNotificationEvent,
   notifyRunFailed,
@@ -26,6 +29,12 @@ import {
 } from './services/notification-orchestrator.js';
 import { claudeAdapter } from './providers/claude/adapter.js';
 import { createNormalizedMessage } from './providers/types.js';
+import {
+  getConfiguredWorkspacesRoot,
+  getLegacyWorkspaceRootForUserId,
+  getWorkspaceRootForPublicId,
+  normalizeLegacyWorkspacePath,
+} from './utils/workspace-paths.js';
 
 const activeSessions = new Map();
 const pendingToolApprovals = new Map();
@@ -138,6 +147,122 @@ function matchesToolPermission(entry, toolName, input) {
   return false;
 }
 
+function resolveClaudeCodeLaunchConfig() {
+  const configuredPath = process.env.CLAUDE_CLI_PATH?.trim();
+  let resolvedPath = configuredPath || null;
+
+  if (!resolvedPath) {
+    try {
+      resolvedPath = execFileSync('which', ['claude'], { encoding: 'utf8' }).trim();
+    } catch {
+      resolvedPath = null;
+    }
+  }
+
+  if (!resolvedPath) {
+    return {
+      pathToClaudeCodeExecutable: 'claude',
+    };
+  }
+
+  try {
+    resolvedPath = realpathSync(resolvedPath);
+  } catch {
+    // Fall back to the unresolved path if realpath fails.
+  }
+
+  if (/\.(?:c?js|mjs|ts|tsx|jsx)$/i.test(resolvedPath)) {
+    return {
+      executable: process.execPath,
+      pathToClaudeCodeExecutable: resolvedPath,
+      spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => spawn(command, args, {
+        cwd,
+        env,
+        signal,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+      }),
+    };
+  }
+
+  return {
+    pathToClaudeCodeExecutable: resolvedPath,
+    spawnClaudeCodeProcess: ({ command, args, cwd, env, signal }) => spawn(command, args, {
+      cwd,
+      env,
+      signal,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+    }),
+  };
+}
+
+async function resolveClaudeWorkspacePath(requestedPath, userId = null, publicId = null) {
+  if (!requestedPath || typeof requestedPath !== 'string') {
+    return requestedPath;
+  }
+
+  let resolvedPath = requestedPath;
+
+  if (userId != null || publicId) {
+    const workspacesRoot = getConfiguredWorkspacesRoot();
+    let resolvedPublicId = publicId;
+
+    if (!resolvedPublicId && userId != null) {
+      try {
+        resolvedPublicId = userDb.getPublicId(userId);
+      } catch {
+        resolvedPublicId = null;
+      }
+    }
+
+    const legacyRoot = userId != null
+      ? getLegacyWorkspaceRootForUserId(userId, workspacesRoot)
+      : null;
+    const workspaceRoot = resolvedPublicId
+      ? getWorkspaceRootForPublicId(resolvedPublicId, workspacesRoot)
+      : null;
+
+    if (workspaceRoot) {
+      await fs.mkdir(workspaceRoot, { recursive: true });
+    }
+
+    if (legacyRoot && workspaceRoot) {
+      resolvedPath = normalizeLegacyWorkspacePath(resolvedPath, legacyRoot, workspaceRoot);
+    }
+
+    if (workspaceRoot && !existsSync(resolvedPath)) {
+      const isUnderWorkspaceRoot = resolvedPath === workspaceRoot || resolvedPath.startsWith(`${workspaceRoot}${path.sep}`);
+      if (isUnderWorkspaceRoot) {
+        return workspaceRoot;
+      }
+    }
+  }
+
+  return resolvedPath;
+}
+
+async function normalizeClaudeQueryOptions(options = {}, ws) {
+  const normalizedOptions = { ...options };
+  const userId = ws?.userId ?? null;
+  const publicId = ws?.publicId ?? null;
+  const requestedPath = normalizedOptions.cwd || normalizedOptions.projectPath || '';
+
+  if (!requestedPath) {
+    return normalizedOptions;
+  }
+
+  const resolvedPath = await resolveClaudeWorkspacePath(requestedPath, userId, publicId);
+
+  if (!resolvedPath || !existsSync(resolvedPath)) {
+    throw new Error(`Project directory does not exist: ${requestedPath}`);
+  }
+
+  normalizedOptions.cwd = resolvedPath;
+  normalizedOptions.projectPath = resolvedPath;
+  return normalizedOptions;
+}
+
 /**
  * Maps CLI options to SDK-compatible options format
  * @param {Object} options - CLI options
@@ -146,7 +271,9 @@ function matchesToolPermission(entry, toolName, input) {
 function mapCliOptionsToSDK(options = {}) {
   const { sessionId, cwd, toolsSettings, permissionMode } = options;
 
-  const sdkOptions = {};
+  const sdkOptions = {
+    ...resolveClaudeCodeLaunchConfig(),
+  };
 
   // Map working directory
   if (cwd) {
@@ -466,7 +593,8 @@ async function loadMcpConfig(cwd) {
  * @returns {Promise<void>}
  */
 async function queryClaudeSDK(command, options = {}, ws) {
-  const { sessionId, sessionSummary } = options;
+  const normalizedOptions = await normalizeClaudeQueryOptions(options, ws);
+  const { sessionId, sessionSummary } = normalizedOptions;
   let capturedSessionId = sessionId;
   let sessionCreatedSent = false;
   let tempImagePaths = [];
@@ -482,16 +610,16 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
   try {
     // Map CLI options to SDK format
-    const sdkOptions = mapCliOptionsToSDK(options);
+    const sdkOptions = mapCliOptionsToSDK(normalizedOptions);
 
     // Load MCP configuration
-    const mcpServers = await loadMcpConfig(options.cwd);
+    const mcpServers = await loadMcpConfig(normalizedOptions.cwd);
     if (mcpServers) {
       sdkOptions.mcpServers = mcpServers;
     }
 
     // Handle images - save to temp files and modify prompt
-    const imageResult = await handleImages(command, options.images, options.cwd);
+    const imageResult = await handleImages(command, normalizedOptions.images, normalizedOptions.cwd);
     const finalCommand = imageResult.modifiedCommand;
     tempImagePaths = imageResult.tempImagePaths;
     tempDir = imageResult.tempDir;

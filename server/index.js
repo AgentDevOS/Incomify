@@ -1460,6 +1460,7 @@ class WebSocketWriter {
         this.ws = ws;
         this.sessionId = null;
         this.userId = userId;
+        this.publicId = ws?.publicId ?? null;
         this.isWebSocketWriter = true;  // Marker for transport detection
     }
 
@@ -1486,6 +1487,7 @@ class WebSocketWriter {
 function handleChatConnection(ws, request) {
     console.log('[INFO] Chat WebSocket connected');
     ws.userId = request?.user?.id ?? request?.user?.userId ?? null;
+    ws.publicId = request?.user?.publicId ?? null;
 
     // Add to connected clients for project updates
     connectedClients.add(ws);
