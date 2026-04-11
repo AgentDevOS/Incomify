@@ -18,6 +18,7 @@ type PendingViewSession = {
 interface UseChatSessionStateArgs {
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
+  provider: SessionProvider;
   ws: WebSocket | null;
   sendMessage: (message: unknown) => void;
   autoScrollToBottom?: boolean;
@@ -91,6 +92,7 @@ function chatMessageToNormalized(
 export function useChatSessionState({
   selectedProject,
   selectedSession,
+  provider,
   ws,
   sendMessage,
   autoScrollToBottom,
@@ -139,6 +141,7 @@ export function useChatSessionState({
   /* ---------------------------------------------------------------- */
 
   const activeSessionId = selectedSession?.id || currentSessionId || null;
+  const resolvedProvider = selectedSession?.__provider || provider;
   const [pendingUserMessage, setPendingUserMessage] = useState<ChatMessage | null>(null);
 
   // Tell the store which session we're viewing so it only re-renders for this one
@@ -151,8 +154,7 @@ export function useChatSessionState({
   // When a real session ID arrives and we have a pending user message, flush it to the store
   const prevActiveSessionRef = useRef<string | null>(null);
   if (activeSessionId && activeSessionId !== prevActiveSessionRef.current && pendingUserMessage) {
-    const prov = (localStorage.getItem('selected-provider') as SessionProvider) || 'claude';
-    const normalized = chatMessageToNormalized(pendingUserMessage, activeSessionId, prov);
+    const normalized = chatMessageToNormalized(pendingUserMessage, activeSessionId, resolvedProvider);
     if (normalized) {
       sessionStore.appendRealtime(activeSessionId, normalized);
     }
@@ -189,12 +191,11 @@ export function useChatSessionState({
       setPendingUserMessage(msg);
       return;
     }
-    const prov = (localStorage.getItem('selected-provider') as SessionProvider) || 'claude';
-    const normalized = chatMessageToNormalized(msg, activeSessionId, prov);
+    const normalized = chatMessageToNormalized(msg, activeSessionId, resolvedProvider);
     if (normalized) {
       sessionStore.appendRealtime(activeSessionId, normalized);
     }
-  }, [activeSessionId, sessionStore]);
+  }, [activeSessionId, resolvedProvider, sessionStore]);
 
   const clearMessages = useCallback(() => {
     if (!activeSessionId) return;
@@ -324,8 +325,8 @@ export function useChatSessionState({
       return;
     }
 
-    const provider = (selectedSession.__provider || localStorage.getItem('selected-provider') as Provider) || 'claude';
-    const sessionKey = `${selectedSession.id}:${selectedProject.name}:${provider}`;
+    const sessionProvider = (selectedSession.__provider || provider) as Provider;
+    const sessionKey = `${selectedSession.id}:${selectedProject.name}:${sessionProvider}`;
 
     // Skip if already loaded and fresh
     if (lastLoadedSessionKeyRef.current === sessionKey && sessionStore.has(selectedSession.id) && !sessionStore.isStale(selectedSession.id)) {
@@ -360,13 +361,13 @@ export function useChatSessionState({
     }
 
     setCurrentSessionId(selectedSession.id);
-    if (provider === 'cursor') {
+    if (sessionProvider === 'cursor') {
       sessionStorage.setItem('cursorSessionId', selectedSession.id);
     }
 
     // Check session status
     if (ws) {
-      sendMessage({ type: 'check-session-status', sessionId: selectedSession.id, provider });
+      sendMessage({ type: 'check-session-status', sessionId: selectedSession.id, provider: sessionProvider });
     }
 
     lastLoadedSessionKeyRef.current = sessionKey;
@@ -374,7 +375,7 @@ export function useChatSessionState({
     // Fetch from server → store updates → chatMessages re-derives automatically
     setIsLoadingSessionMessages(true);
     sessionStore.fetchFromServer(selectedSession.id, {
-      provider: (selectedSession.__provider || provider) as SessionProvider,
+      provider: sessionProvider as SessionProvider,
       projectName: selectedProject.name,
       projectPath: selectedProject.fullPath || selectedProject.path || '',
       limit: MESSAGES_PER_PAGE,
@@ -394,6 +395,7 @@ export function useChatSessionState({
     resetStreamingState,
     selectedProject,
     selectedSession?.id,
+    provider,
     sendMessage,
     ws,
     sessionStore,
@@ -405,12 +407,12 @@ export function useChatSessionState({
 
     const reloadExternalMessages = async () => {
       try {
-        const provider = (localStorage.getItem('selected-provider') as Provider) || 'claude';
+        const sessionProvider = (selectedSession.__provider || provider) as Provider;
 
         // Skip store refresh during active streaming
         if (!isLoading) {
           await sessionStore.refreshFromServer(selectedSession.id, {
-            provider: (selectedSession.__provider || provider) as SessionProvider,
+            provider: sessionProvider as SessionProvider,
             projectName: selectedProject.name,
             projectPath: selectedProject.fullPath || selectedProject.path || '',
           });
@@ -434,6 +436,7 @@ export function useChatSessionState({
     selectedSession,
     sessionStore,
     isLoading,
+    provider,
   ]);
 
   // Search navigation target

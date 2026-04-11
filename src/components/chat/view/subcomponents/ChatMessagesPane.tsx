@@ -17,16 +17,6 @@ interface ChatMessagesPaneProps {
   selectedSession: ProjectSession | null;
   currentSessionId: string | null;
   provider: SessionProvider;
-  setProvider: (provider: SessionProvider) => void;
-  textareaRef: RefObject<HTMLTextAreaElement>;
-  claudeModel: string;
-  setClaudeModel: (model: string) => void;
-  cursorModel: string;
-  setCursorModel: (model: string) => void;
-  codexModel: string;
-  setCodexModel: (model: string) => void;
-  geminiModel: string;
-  setGeminiModel: (model: string) => void;
   tasksEnabled: boolean;
   isTaskMasterInstalled: boolean | null;
   onShowAllTasks?: (() => void) | null;
@@ -63,16 +53,6 @@ export default function ChatMessagesPane({
   selectedSession,
   currentSessionId,
   provider,
-  setProvider,
-  textareaRef,
-  claudeModel,
-  setClaudeModel,
-  cursorModel,
-  setCursorModel,
-  codexModel,
-  setCodexModel,
-  geminiModel,
-  setGeminiModel,
   tasksEnabled,
   isTaskMasterInstalled,
   onShowAllTasks,
@@ -143,24 +123,13 @@ export default function ChatMessagesPane({
           </div>
         </div>
       ) : chatMessages.length === 0 ? (
-        <ProviderSelectionEmptyState
-          selectedSession={selectedSession}
-          currentSessionId={currentSessionId}
-          provider={provider}
-          setProvider={setProvider}
-          textareaRef={textareaRef}
-          claudeModel={claudeModel}
-          setClaudeModel={setClaudeModel}
-          cursorModel={cursorModel}
-          setCursorModel={setCursorModel}
-          codexModel={codexModel}
-          setCodexModel={setCodexModel}
-          geminiModel={geminiModel}
-          setGeminiModel={setGeminiModel}
-          tasksEnabled={tasksEnabled}
-          isTaskMasterInstalled={isTaskMasterInstalled}
-          onShowAllTasks={onShowAllTasks}
-          setInput={setInput}
+      <ProviderSelectionEmptyState
+        selectedSession={selectedSession}
+        currentSessionId={currentSessionId}
+        tasksEnabled={tasksEnabled}
+        isTaskMasterInstalled={isTaskMasterInstalled}
+        onShowAllTasks={onShowAllTasks}
+        setInput={setInput}
         />
       ) : (
         <>
@@ -266,4 +235,3 @@ export default function ChatMessagesPane({
     </div>
   );
 }
-

@@ -173,8 +173,8 @@
     "buttonTitle": "Denkmodus: {{mode}}"
   },
   "providerSelection": {
-    "title": "KI-Assistent wählen",
-    "description": "Anbieter auswählen, um eine neue Unterhaltung zu starten",
+    "title": "Claude Code",
+    "description": "Claude Code ist standardmäßig ausgewählt. Du kannst direkt unten loslegen.",
     "selectModel": "Modell auswählen",
     "providerInfo": {
       "anthropic": "von Anthropic",

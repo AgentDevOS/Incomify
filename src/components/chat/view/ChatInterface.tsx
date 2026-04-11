@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useTasksSettings } from '../../../contexts/TasksSettingsContext';
 import { QuickSettingsPanel } from '../../quick-settings-panel';
-import type { ChatInterfaceProps, Provider  } from '../types/types';
+import type { ChatInterfaceProps } from '../types/types';
 import type { SessionProvider } from '../../../types/app';
 import { useChatProviderState } from '../hooks/useChatProviderState';
 import { useChatSessionState } from '../hooks/useChatSessionState';
@@ -62,15 +62,10 @@ function ChatInterface({
 
   const {
     provider,
-    setProvider,
     cursorModel,
-    setCursorModel,
     claudeModel,
-    setClaudeModel,
     codexModel,
-    setCodexModel,
     geminiModel,
-    setGeminiModel,
     permissionMode,
     pendingPermissionRequests,
     setPendingPermissionRequests,
@@ -116,6 +111,7 @@ function ChatInterface({
   } = useChatSessionState({
     selectedProject,
     selectedSession,
+    provider,
     ws,
     sendMessage,
     autoScrollToBottom,
@@ -207,15 +203,14 @@ function ChatInterface({
   // so missed streaming events are shown. Also reset isLoading.
   const handleWebSocketReconnect = useCallback(async () => {
     if (!selectedProject || !selectedSession) return;
-    const providerVal = (localStorage.getItem('selected-provider') as SessionProvider) || 'claude';
     await sessionStore.refreshFromServer(selectedSession.id, {
-      provider: (selectedSession.__provider || providerVal) as SessionProvider,
+      provider: (selectedSession.__provider || provider) as SessionProvider,
       projectName: selectedProject.name,
       projectPath: selectedProject.fullPath || selectedProject.path || '',
     });
     setIsLoading(false);
     setCanAbortSession(false);
-  }, [selectedProject, selectedSession, sessionStore, setIsLoading, setCanAbortSession]);
+  }, [provider, selectedProject, selectedSession, sessionStore, setIsLoading, setCanAbortSession]);
 
   useChatRealtimeHandlers({
     latestMessage,
@@ -304,16 +299,6 @@ function ChatInterface({
           selectedSession={selectedSession}
           currentSessionId={currentSessionId}
           provider={provider}
-          setProvider={(nextProvider) => setProvider(nextProvider as Provider)}
-          textareaRef={textareaRef}
-          claudeModel={claudeModel}
-          setClaudeModel={setClaudeModel}
-          cursorModel={cursorModel}
-          setCursorModel={setCursorModel}
-          codexModel={codexModel}
-          setCodexModel={setCodexModel}
-          geminiModel={geminiModel}
-          setGeminiModel={setGeminiModel}
           tasksEnabled={tasksEnabled}
           isTaskMasterInstalled={isTaskMasterInstalled}
           onShowAllTasks={onShowAllTasks}

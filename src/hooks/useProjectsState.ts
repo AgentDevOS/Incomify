@@ -392,7 +392,7 @@ export function useProjectsState({
         setActiveTab('chat');
       }
 
-      const provider = localStorage.getItem('selected-provider') || 'claude';
+      const provider = session.__provider || 'claude';
       if (provider === 'cursor') {
         sessionStorage.setItem('cursorSessionId', session.id);
       }

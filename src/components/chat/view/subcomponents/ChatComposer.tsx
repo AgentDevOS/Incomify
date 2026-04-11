@@ -17,7 +17,6 @@ import CommandMenu from './CommandMenu';
 import ClaudeStatus from './ClaudeStatus';
 import ImageAttachment from './ImageAttachment';
 import PermissionRequestsBanner from './PermissionRequestsBanner';
-import ChatInputControls from './ChatInputControls';
 
 interface MentionableFile {
   name: string;
@@ -188,21 +187,7 @@ export default function ChatComposer({
           handleGrantToolPermission={handleGrantToolPermission}
         />
 
-        {!hasQuestionPanel && <ChatInputControls
-          permissionMode={permissionMode}
-          onModeSwitch={onModeSwitch}
-          provider={provider}
-          thinkingMode={thinkingMode}
-          setThinkingMode={setThinkingMode}
-          tokenBudget={tokenBudget}
-          slashCommandsCount={slashCommandsCount}
-          onToggleCommandMenu={onToggleCommandMenu}
-          hasInput={hasInput}
-          onClearInput={onClearInput}
-          isUserScrolledUp={isUserScrolledUp}
-          hasMessages={hasMessages}
-          onScrollToBottom={onScrollToBottom}
-        />}
+        {/* Temporarily hide the input controls row. */}
       </div>
 
       {!hasQuestionPanel && <form onSubmit={onSubmit as (event: FormEvent<HTMLFormElement>) => void} className="relative mx-auto max-w-4xl">

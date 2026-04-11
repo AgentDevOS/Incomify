@@ -155,8 +155,8 @@
     "buttonTitle": "Thinking 모드: {{mode}}"
   },
   "providerSelection": {
-    "title": "AI 어시스턴트 선택",
-    "description": "새 대화를 시작할 프로바이더를 선택하세요",
+    "title": "Claude Code",
+    "description": "Claude Code가 기본으로 선택되어 있습니다. 아래에서 바로 입력하면 됩니다.",
     "selectModel": "모델 선택",
     "providerInfo": {
       "anthropic": "Anthropic 제공",

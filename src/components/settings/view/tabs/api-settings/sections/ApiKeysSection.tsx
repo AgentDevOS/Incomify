@@ -27,6 +27,7 @@ export default function ApiKeysSection({
   onDeleteApiKey,
 }: ApiKeysSectionProps) {
   const { t } = useTranslation('settings');
+  const baseUrl = import.meta.env.BASE_URL;
 
   return (
     <div>
@@ -44,7 +45,7 @@ export default function ApiKeysSection({
       <div className="mb-4">
         <p className="mb-2 text-sm text-muted-foreground">{t('apiKeys.description')}</p>
         <a
-          href="/api-docs.html"
+          href={`${baseUrl}api-docs.html`}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-sm text-primary hover:underline"

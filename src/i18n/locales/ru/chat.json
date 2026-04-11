@@ -173,8 +173,8 @@
     "buttonTitle": "Режим размышления: {{mode}}"
   },
   "providerSelection": {
-    "title": "Выберите вашего AI-ассистента",
-    "description": "Выберите провайдера для начала нового разговора",
+    "title": "Claude Code",
+    "description": "Claude Code выбран по умолчанию. Начинайте вводить сообщение ниже.",
     "selectModel": "Выбрать модель",
     "providerInfo": {
       "anthropic": "от Anthropic",

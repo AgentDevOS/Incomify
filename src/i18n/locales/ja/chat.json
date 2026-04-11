@@ -152,8 +152,8 @@
     "buttonTitle": "思考モード: {{mode}}"
   },
   "providerSelection": {
-    "title": "AIアシスタントを選択",
-    "description": "新しい会話を始めるプロバイダーを選択してください",
+    "title": "Claude Code",
+    "description": "Claude Code がデフォルトで選択されています。下からそのまま入力してください。",
     "selectModel": "モデルを選択",
     "providerInfo": {
       "anthropic": "by Anthropic",

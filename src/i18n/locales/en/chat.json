@@ -173,8 +173,8 @@
     "buttonTitle": "Thinking mode: {{mode}}"
   },
   "providerSelection": {
-    "title": "Choose Your AI Assistant",
-    "description": "Select a provider to start a new conversation",
+    "title": "Claude Code",
+    "description": "Claude Code is selected by default. Start typing below.",
     "selectModel": "Select Model",
     "providerInfo": {
       "anthropic": "by Anthropic",
