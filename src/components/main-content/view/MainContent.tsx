@@ -99,7 +99,6 @@ function MainContent({
     <div className="flex h-full flex-col">
       <MainContentHeader
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
         selectedProject={selectedProject}
         selectedSession={selectedSession}
         shouldShowTasksTab={shouldShowTasksTab}
