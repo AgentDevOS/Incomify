@@ -22,7 +22,62 @@ type FetchProjectsOptions = {
   showLoadingState?: boolean;
 };
 
+const LAST_SELECTED_PROJECT_KEY = 'lastSelectedProject';
+const LAST_SESSION_BY_PROJECT_KEY = 'lastSessionByProject';
+
 const serialize = (value: unknown) => JSON.stringify(value ?? null);
+
+const readPersistedString = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const writePersistedString = (key: string, value: string | null) => {
+  try {
+    if (!value) {
+      localStorage.removeItem(key);
+      return;
+    }
+
+    localStorage.setItem(key, value);
+  } catch {
+    // Silently ignore storage errors
+  }
+};
+
+const readLastSessionByProject = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(LAST_SESSION_BY_PROJECT_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return Object.entries(parsed).reduce<Record<string, string>>((acc, [projectName, sessionId]) => {
+      if (typeof projectName === 'string' && typeof sessionId === 'string' && sessionId) {
+        acc[projectName] = sessionId;
+      }
+      return acc;
+    }, {});
+  } catch {
+    return {};
+  }
+};
+
+const writeLastSessionByProject = (value: Record<string, string>) => {
+  try {
+    localStorage.setItem(LAST_SESSION_BY_PROJECT_KEY, JSON.stringify(value));
+  } catch {
+    // Silently ignore storage errors
+  }
+};
 
 const projectsHaveChanges = (
   prevProjects: Project[],
@@ -70,6 +125,73 @@ const getProjectSessions = (project: Project): ProjectSession[] => {
     ...(project.cursorSessions ?? []),
     ...(project.geminiSessions ?? []),
   ];
+};
+
+const getProjectSessionsWithProviders = (project: Project): ProjectSession[] => {
+  const withProjectName = (session: ProjectSession, provider: ProjectSession['__provider']) => ({
+    ...session,
+    __provider: provider,
+    __projectName: session.__projectName || project.name,
+  });
+
+  return [
+    ...(project.sessions ?? []).map((session) => withProjectName(session, 'claude')),
+    ...(project.codexSessions ?? []).map((session) => withProjectName(session, 'codex')),
+    ...(project.cursorSessions ?? []).map((session) => withProjectName(session, 'cursor')),
+    ...(project.geminiSessions ?? []).map((session) => withProjectName(session, 'gemini')),
+  ];
+};
+
+const getSessionActivityTime = (session: ProjectSession): number => {
+  const candidates = [
+    session.updated_at,
+    session.lastActivity,
+    session.createdAt,
+    session.created_at,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value !== 'string' || !value) {
+      continue;
+    }
+
+    const timestamp = Date.parse(value);
+    if (Number.isFinite(timestamp)) {
+      return timestamp;
+    }
+  }
+
+  return 0;
+};
+
+const findProjectSessionById = (project: Project, targetSessionId: string): ProjectSession | null => {
+  return getProjectSessionsWithProviders(project).find((session) => session.id === targetSessionId) ?? null;
+};
+
+const getPreferredProjectSession = (
+  project: Project,
+  lastSessionByProject: Record<string, string>,
+): ProjectSession | null => {
+  const sessions = getProjectSessionsWithProviders(project);
+  if (sessions.length === 0) {
+    return null;
+  }
+
+  const lastSessionId = lastSessionByProject[project.name];
+  if (lastSessionId) {
+    const persisted = sessions.find((session) => session.id === lastSessionId);
+    if (persisted) {
+      return persisted;
+    }
+  }
+
+  return sessions.reduce<ProjectSession | null>((latest, session) => {
+    if (!latest) {
+      return session;
+    }
+
+    return getSessionActivityTime(session) > getSessionActivityTime(latest) ? session : latest;
+  }, null);
 };
 
 const isUpdateAdditive = (
@@ -155,6 +277,63 @@ export function useProjectsState({
   const [externalMessageUpdate, setExternalMessageUpdate] = useState(0);
 
   const loadingProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasRestoredRootRef = useRef(false);
+
+  const persistProjectSelection = useCallback((projectName: string | null | undefined) => {
+    writePersistedString(LAST_SELECTED_PROJECT_KEY, projectName ?? null);
+  }, []);
+
+  const persistSessionSelection = useCallback((projectName: string | null | undefined, nextSessionId: string | null | undefined) => {
+    if (!projectName) {
+      return;
+    }
+
+    const current = readLastSessionByProject();
+    if (!nextSessionId) {
+      if (!(projectName in current)) {
+        return;
+      }
+
+      const next = { ...current };
+      delete next[projectName];
+      writeLastSessionByProject(next);
+      return;
+    }
+
+    if (current[projectName] === nextSessionId) {
+      return;
+    }
+
+    writeLastSessionByProject({
+      ...current,
+      [projectName]: nextSessionId,
+    });
+  }, []);
+
+  const clearPersistedSessionSelection = useCallback((sessionIdToDelete: string) => {
+    const current = readLastSessionByProject();
+    const nextEntries = Object.entries(current).filter(([, persistedSessionId]) => persistedSessionId !== sessionIdToDelete);
+    if (nextEntries.length === Object.keys(current).length) {
+      return;
+    }
+    writeLastSessionByProject(Object.fromEntries(nextEntries));
+  }, []);
+
+  const clearPersistedProjectSelection = useCallback((projectName: string) => {
+    const currentProjectName = readPersistedString(LAST_SELECTED_PROJECT_KEY);
+    if (currentProjectName === projectName) {
+      writePersistedString(LAST_SELECTED_PROJECT_KEY, null);
+    }
+
+    const current = readLastSessionByProject();
+    if (!(projectName in current)) {
+      return;
+    }
+
+    const next = { ...current };
+    delete next[projectName];
+    writeLastSessionByProject(next);
+  }, []);
 
   const fetchProjects = useCallback(async ({ showLoadingState = true }: FetchProjectsOptions = {}) => {
     try {
@@ -196,12 +375,66 @@ export function useProjectsState({
     void fetchProjects();
   }, [fetchProjects]);
 
-  // Auto-select the project when there is only one, so the user lands on the new session page
   useEffect(() => {
-    if (!isLoadingProjects && projects.length === 1 && !selectedProject && !sessionId) {
-      setSelectedProject(projects[0]);
+    if (sessionId) {
+      hasRestoredRootRef.current = false;
+      return;
     }
-  }, [isLoadingProjects, projects, selectedProject, sessionId]);
+
+    if (isLoadingProjects || projects.length === 0 || hasRestoredRootRef.current || selectedSession) {
+      return;
+    }
+
+    const persistedProjectName = readPersistedString(LAST_SELECTED_PROJECT_KEY);
+    const preferredProject = (
+      (persistedProjectName ? projects.find((project) => project.name === persistedProjectName) : null) ??
+      (projects.length === 1 ? projects[0] : null)
+    );
+
+    if (!preferredProject) {
+      return;
+    }
+
+    hasRestoredRootRef.current = true;
+    setSelectedProject(preferredProject);
+
+    const preferredSession = getPreferredProjectSession(preferredProject, readLastSessionByProject());
+    if (preferredSession) {
+      setSelectedSession(preferredSession);
+      navigate(`/session/${preferredSession.id}`);
+    }
+  }, [isLoadingProjects, navigate, projects, selectedSession, sessionId]);
+
+  useEffect(() => {
+    if (!selectedProject?.name) {
+      return;
+    }
+
+    persistProjectSelection(selectedProject.name);
+  }, [persistProjectSelection, selectedProject?.name]);
+
+  useEffect(() => {
+    const resolvedProjectName =
+      selectedSession?.__projectName ||
+      (
+        selectedProject && sessionId && findProjectSessionById(selectedProject, sessionId)
+          ? selectedProject.name
+          : null
+      );
+    const resolvedSessionId =
+      selectedSession?.id ||
+      (
+        selectedProject && sessionId && findProjectSessionById(selectedProject, sessionId)
+          ? sessionId
+          : null
+      );
+
+    if (!resolvedProjectName || !resolvedSessionId) {
+      return;
+    }
+
+    persistSessionSelection(resolvedProjectName, resolvedSessionId);
+  }, [persistSessionSelection, selectedProject, selectedSession?.__projectName, selectedSession?.id, sessionId]);
 
   useEffect(() => {
     if (!latestMessage) {
@@ -373,20 +606,41 @@ export function useProjectsState({
 
   const handleProjectSelect = useCallback(
     (project: Project) => {
+      const preferredSession = getPreferredProjectSession(project, readLastSessionByProject());
+
       setSelectedProject(project);
-      setSelectedSession(null);
-      navigate('/');
+      persistProjectSelection(project.name);
+
+      if (preferredSession) {
+        setSelectedSession(preferredSession);
+        persistSessionSelection(project.name, preferredSession.id);
+
+        if (activeTab === 'tasks' || activeTab === 'preview') {
+          setActiveTab('chat');
+        }
+
+        navigate(`/session/${preferredSession.id}`);
+      } else {
+        setSelectedSession(null);
+        navigate('/');
+      }
 
       if (isMobile) {
         setSidebarOpen(false);
       }
     },
-    [isMobile, navigate],
+    [activeTab, isMobile, navigate, persistProjectSelection, persistSessionSelection],
   );
 
   const handleSessionSelect = useCallback(
     (session: ProjectSession) => {
+      const sessionProjectName = session.__projectName || selectedProject?.name || null;
+
       setSelectedSession(session);
+      if (sessionProjectName) {
+        persistProjectSelection(sessionProjectName);
+        persistSessionSelection(sessionProjectName, session.id);
+      }
 
       if (activeTab === 'tasks' || activeTab === 'preview') {
         setActiveTab('chat');
@@ -408,13 +662,14 @@ export function useProjectsState({
 
       navigate(`/session/${session.id}`);
     },
-    [activeTab, isMobile, navigate, selectedProject?.name],
+    [activeTab, isMobile, navigate, persistProjectSelection, persistSessionSelection, selectedProject?.name],
   );
 
   const handleNewSession = useCallback(
     (project: Project) => {
       setSelectedProject(project);
       setSelectedSession(null);
+      persistProjectSelection(project.name);
       setActiveTab('chat');
       navigate('/');
 
@@ -422,7 +677,7 @@ export function useProjectsState({
         setSidebarOpen(false);
       }
     },
-    [isMobile, navigate],
+    [isMobile, navigate, persistProjectSelection],
   );
 
   const handleSessionDelete = useCallback(
@@ -431,6 +686,8 @@ export function useProjectsState({
         setSelectedSession(null);
         navigate('/');
       }
+
+      clearPersistedSessionSelection(sessionIdToDelete);
 
       setProjects((prevProjects) =>
         prevProjects.map((project) => ({
@@ -450,7 +707,7 @@ export function useProjectsState({
         })),
       );
     },
-    [navigate, selectedSession?.id],
+    [clearPersistedSessionSelection, navigate, selectedSession?.id],
   );
 
   const handleSidebarRefresh = useCallback(async () => {
@@ -507,9 +764,10 @@ export function useProjectsState({
         navigate('/');
       }
 
+      clearPersistedProjectSelection(projectName);
       setProjects((prevProjects) => prevProjects.filter((project) => project.name !== projectName));
     },
-    [navigate, selectedProject?.name],
+    [clearPersistedProjectSelection, navigate, selectedProject?.name],
   );
 
   const sidebarSharedProps = useMemo(
