@@ -83,6 +83,79 @@ const createFakeSubmitEvent = () => {
 const isTemporarySessionId = (sessionId: string | null | undefined) =>
   Boolean(sessionId && sessionId.startsWith('new-session-'));
 
+const getPendingSessionId = () =>
+  typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
+
+const getCursorSessionId = () =>
+  typeof window !== 'undefined' ? sessionStorage.getItem('cursorSessionId') : null;
+
+const isSessionRoutePath = () =>
+  typeof window !== 'undefined' && /\/session\/[^/]+$/.test(window.location.pathname);
+
+function resolveComposerSessionId({
+  selectedSession,
+  currentSessionId,
+  pendingViewSessionId,
+  provider,
+}: {
+  selectedSession: ProjectSession | null;
+  currentSessionId: string | null;
+  pendingViewSessionId: string | null;
+  provider: SessionProvider;
+}): string | null {
+  const isSessionRoute = isSessionRoutePath();
+
+  if (!isSessionRoute) {
+    const pendingSessionId = getPendingSessionId();
+
+    if (isTemporarySessionId(currentSessionId)) {
+      return currentSessionId;
+    }
+
+    if (pendingViewSessionId) {
+      return pendingViewSessionId;
+    }
+
+    if (pendingSessionId) {
+      return pendingSessionId;
+    }
+
+    return null;
+  }
+
+  if (selectedSession?.id) {
+    return selectedSession.id;
+  }
+
+  const pendingSessionId = getPendingSessionId();
+
+  // On the blank "new session" view, ignore stale concrete IDs from the previously opened session.
+  if (
+    currentSessionId &&
+    (
+      isTemporarySessionId(currentSessionId) ||
+      currentSessionId === pendingViewSessionId ||
+      currentSessionId === pendingSessionId
+    )
+  ) {
+    return currentSessionId;
+  }
+
+  if (pendingViewSessionId) {
+    return pendingViewSessionId;
+  }
+
+  if (pendingSessionId) {
+    return pendingSessionId;
+  }
+
+  if (provider === 'cursor') {
+    return getCursorSessionId();
+  }
+
+  return null;
+}
+
 const getNotificationSessionSummary = (
   selectedSession: ProjectSession | null,
   fallbackInput: string,
@@ -279,7 +352,12 @@ export function useChatComposerState({
         const context = {
           projectPath: selectedProject.fullPath || selectedProject.path,
           projectName: selectedProject.name,
-          sessionId: currentSessionId,
+          sessionId: resolveComposerSessionId({
+            selectedSession,
+            currentSessionId,
+            pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+            provider,
+          }),
           provider,
           model: provider === 'cursor' ? cursorModel : provider === 'codex' ? codexModel : provider === 'gemini' ? geminiModel : claudeModel,
           tokenUsage: tokenBudget,
@@ -336,7 +414,9 @@ export function useChatComposerState({
       handleBuiltInCommand,
       handleCustomCommand,
       input,
+      pendingViewSessionRef,
       provider,
+      selectedSession,
       selectedProject,
       addMessage,
       tokenBudget,
@@ -527,9 +607,28 @@ export function useChatComposerState({
         }
       }
 
-      const effectiveSessionId =
-        currentSessionId || selectedSession?.id || sessionStorage.getItem('cursorSessionId');
+      const effectiveSessionId = resolveComposerSessionId({
+        selectedSession,
+        currentSessionId,
+        pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+        provider,
+      });
       const sessionToActivate = effectiveSessionId || `new-session-${Date.now()}`;
+
+      console.log('[SessionDebug][Composer] submit', {
+        provider,
+        currentPath: typeof window !== 'undefined' ? window.location.pathname : null,
+        selectedProject: selectedProject.name,
+        selectedSessionId: selectedSession?.id ?? null,
+        currentSessionId,
+        pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+        pendingSessionId: getPendingSessionId(),
+        cursorSessionId: getCursorSessionId(),
+        effectiveSessionId,
+        sessionToActivate,
+        resume: Boolean(effectiveSessionId),
+        inputPreview: currentInput.slice(0, 120),
+      });
 
       const userMessage: ChatMessage = {
         type: 'user',
@@ -850,13 +949,17 @@ export function useChatComposerState({
       return;
     }
 
-    const pendingSessionId =
-      typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
-    const cursorSessionId =
-      typeof window !== 'undefined' ? sessionStorage.getItem('cursorSessionId') : null;
+    const pendingSessionId = getPendingSessionId();
+    const cursorSessionId = getCursorSessionId();
+    const resolvedSessionId = resolveComposerSessionId({
+      selectedSession,
+      currentSessionId,
+      pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+      provider,
+    });
 
     const candidateSessionIds = [
-      currentSessionId,
+      resolvedSessionId,
       pendingViewSessionRef.current?.sessionId || null,
       pendingSessionId,
       provider === 'cursor' ? cursorSessionId : null,
@@ -876,7 +979,7 @@ export function useChatComposerState({
       sessionId: targetSessionId,
       provider,
     });
-  }, [canAbortSession, currentSessionId, pendingViewSessionRef, provider, selectedSession?.id, sendMessage]);
+  }, [canAbortSession, currentSessionId, pendingViewSessionRef, provider, selectedSession, sendMessage]);
 
   const handleTranscript = useCallback((text: string) => {
     if (!text.trim()) {

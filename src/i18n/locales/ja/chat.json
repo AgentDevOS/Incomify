@@ -9,7 +9,9 @@
     "copied": "メッセージをコピーしました",
     "selectFormat": "コピー形式を選択",
     "copyAsMarkdown": "Markdownとしてコピー",
-    "copyAsText": "テキストとしてコピー"
+    "copyAsText": "テキストとしてコピー",
+    "markdownShort": "MD",
+    "textShort": "TXT"
   },
   "messageTypes": {
     "user": "U",

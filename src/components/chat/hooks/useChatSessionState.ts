@@ -15,6 +15,52 @@ type PendingViewSession = {
   startedAt: number;
 };
 
+const isTemporarySessionId = (sessionId: string | null | undefined) =>
+  Boolean(sessionId && sessionId.startsWith('new-session-'));
+
+const getPendingSessionId = () =>
+  typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
+
+const isSessionRoutePath = () =>
+  typeof window !== 'undefined' && /\/session\/[^/]+$/.test(window.location.pathname);
+
+function resolveActiveViewSessionId(
+  selectedSession: ProjectSession | null,
+  currentSessionId: string | null,
+  pendingViewSessionId: string | null,
+) {
+  const isSessionRoute = isSessionRoutePath();
+
+  if (!isSessionRoute) {
+    const pendingSessionId = getPendingSessionId();
+
+    if (isTemporarySessionId(currentSessionId)) {
+      return currentSessionId;
+    }
+
+    return pendingViewSessionId || pendingSessionId || null;
+  }
+
+  if (selectedSession?.id) {
+    return selectedSession.id;
+  }
+
+  const pendingSessionId = getPendingSessionId();
+
+  if (
+    currentSessionId &&
+    (
+      isTemporarySessionId(currentSessionId) ||
+      currentSessionId === pendingViewSessionId ||
+      currentSessionId === pendingSessionId
+    )
+  ) {
+    return currentSessionId;
+  }
+
+  return pendingViewSessionId || pendingSessionId || null;
+}
+
 interface UseChatSessionStateArgs {
   selectedProject: Project | null;
   selectedSession: ProjectSession | null;
@@ -140,7 +186,11 @@ export function useChatSessionState({
   /*  Derive chatMessages from the store                              */
   /* ---------------------------------------------------------------- */
 
-  const activeSessionId = selectedSession?.id || currentSessionId || null;
+  const activeSessionId = resolveActiveViewSessionId(
+    selectedSession,
+    currentSessionId,
+    pendingViewSessionRef.current?.sessionId || null,
+  );
   const resolvedProvider = selectedSession?.__provider || provider;
   const [pendingUserMessage, setPendingUserMessage] = useState<ChatMessage | null>(null);
 

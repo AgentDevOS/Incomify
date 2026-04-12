@@ -24,7 +24,7 @@
   },
   "scripts": {
     "dev": "concurrently --kill-others \"npm run server\" \"npm run client\"",
-    "dev:aisoft-ui": "APP_BASE_URL=/aisoft/ui/ ./scripts/start-aisoft-ui.sh",
+    "dev:aisoft-ui": "./scripts/start-aisoft-ui.sh",
     "server": "node server/index.js",
     "client": "vite",
     "build": "vite build",

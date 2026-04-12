@@ -9,7 +9,9 @@
     "copied": "Сообщение скопировано",
     "selectFormat": "Выбрать формат копирования",
     "copyAsMarkdown": "Копировать как Markdown",
-    "copyAsText": "Копировать как текст"
+    "copyAsText": "Копировать как текст",
+    "markdownShort": "MD",
+    "textShort": "TXT"
   },
   "messageTypes": {
     "user": "П",

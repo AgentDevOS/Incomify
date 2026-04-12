@@ -20,6 +20,10 @@ const PROVIDER = 'claude';
  * @returns {import('../types.js').NormalizedMessage[]}
  */
 export function normalizeMessage(raw, sessionId) {
+  if (raw?.isMeta === true) {
+    return [];
+  }
+
   // ── Streaming events (realtime) ──────────────────────────────────────────
   if (raw.type === 'content_block_delta' && raw.delta?.text) {
     return [createNormalizedMessage({ kind: 'stream_delta', content: raw.delta.text, sessionId, provider: PROVIDER })];
@@ -211,14 +215,17 @@ export const claudeAdapter = {
    * Fetch session history from JSONL files, returning normalized messages.
    */
   async fetchHistory(sessionId, opts = {}) {
-    const { projectName, limit = null, offset = 0 } = opts;
+    const { projectName, userId = null, limit = null, offset = 0 } = opts;
     if (!projectName) {
       return { messages: [], total: 0, hasMore: false, offset: 0, limit: null };
     }
 
     let result;
     try {
-      result = await getSessionMessages(projectName, sessionId, limit, offset);
+      console.log(
+        `[CLAUDE_FETCH_HISTORY] sessionId=${sessionId} projectName=${projectName} userId=${userId ?? 'null'} limit=${limit ?? 'null'} offset=${offset}`
+      );
+      result = await getSessionMessages(projectName, sessionId, limit, offset, userId);
     } catch (error) {
       console.warn(`[ClaudeAdapter] Failed to load session ${sessionId}:`, error.message);
       return { messages: [], total: 0, hasMore: false, offset: 0, limit: null };

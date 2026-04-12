@@ -1475,6 +1475,11 @@ class WebSocketWriter {
     }
 
     setSessionId(sessionId) {
+        console.log('[SessionDebug][Server][Writer] setSessionId', {
+            previousSessionId: this.sessionId,
+            nextSessionId: sessionId,
+            userId: this.userId,
+        });
         this.sessionId = sessionId;
     }
 
@@ -1498,6 +1503,15 @@ function handleChatConnection(ws, request) {
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
+            console.log('[SessionDebug][Server][WS] incoming', {
+                type: data.type,
+                topLevelSessionId: data.sessionId ?? null,
+                optionSessionId: data.options?.sessionId ?? null,
+                writerSessionId: writer.getSessionId(),
+                resume: data.options?.resume ?? null,
+                projectPath: data.options?.projectPath ?? data.options?.cwd ?? null,
+                commandPreview: typeof data.command === 'string' ? data.command.slice(0, 120) : null,
+            });
 
             if (data.type === 'claude-command') {
                 console.log('[DEBUG] User message:', data.command || '[Continue/Resume]');

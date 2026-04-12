@@ -50,9 +50,16 @@ router.get('/:sessionId/messages', async (req, res) => {
       projectPath,
     });
 
+    console.log(
+      `[MESSAGES_ROUTE] sessionId=${sessionId} provider=${provider} requestedProjectName=${projectName || '(empty)'} ` +
+      `resolvedProjectName=${access.projectName || '(empty)'} requestedProjectPath=${projectPath || '(empty)'} ` +
+      `resolvedProjectPath=${access.projectPath || '(empty)'} userId=${req.user?.id ?? 'null'}`
+    );
+
     const result = await adapter.fetchHistory(sessionId, {
       projectName: access.projectName || projectName,
       projectPath: access.projectPath || projectPath,
+      userId: req.user?.id ?? null,
       limit,
       offset,
     });

@@ -68,6 +68,10 @@ import os from 'os';
 import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames, userProjectsDb } from './database/db.js';
 
+function isClaudeMetaEntry(entry) {
+  return entry?.isMeta === true;
+}
+
 // Import TaskMaster detection functions
 async function detectTaskMasterFolder(projectPath) {
   try {
@@ -287,6 +291,22 @@ function clearProjectDirectoryCache() {
   projectDirectoryCache.clear();
 }
 
+function encodeClaudeProjectName(projectPath = '') {
+  return String(projectPath || '').replace(/[^a-zA-Z0-9-]/g, '-');
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return false;
+    }
+    throw error;
+  }
+}
+
 // Load project configuration file
 async function loadProjectConfig() {
   const configPath = path.join(os.homedir(), '.claude', 'project-config.json');
@@ -476,6 +496,56 @@ async function extractProjectDirectory(projectName, userId = null) {
   }
 }
 
+async function resolveClaudeProjectStorage(projectName, userId = null) {
+  await ensureProjectAccess(projectName, userId);
+
+  const requestedProjectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+  if (await pathExists(requestedProjectDir)) {
+    return {
+      projectDir: requestedProjectDir,
+      requestedProjectName: projectName,
+      resolvedProjectName: projectName,
+      projectPath: await extractProjectDirectory(projectName, userId).catch(() => ''),
+      resolution: 'direct',
+    };
+  }
+
+  let projectPath = '';
+  try {
+    projectPath = await extractProjectDirectory(projectName, userId);
+  } catch {
+    projectPath = '';
+  }
+
+  const encodedProjectName = encodeClaudeProjectName(projectPath);
+  if (projectPath && encodedProjectName && encodedProjectName !== projectName) {
+    const encodedProjectDir = path.join(os.homedir(), '.claude', 'projects', encodedProjectName);
+    if (await pathExists(encodedProjectDir)) {
+      console.warn(
+        `[CLAUDE_PROJECT_ALIAS] requested=${projectName} resolved=${encodedProjectName} projectPath=${projectPath} userId=${userId ?? 'global'}`
+      );
+      return {
+        projectDir: encodedProjectDir,
+        requestedProjectName: projectName,
+        resolvedProjectName: encodedProjectName,
+        projectPath,
+        resolution: 'path-alias',
+      };
+    }
+  }
+
+  console.warn(
+    `[CLAUDE_PROJECT_DIR_MISSING] requested=${projectName} expected=${encodedProjectName || projectName} projectPath=${projectPath || '(unknown)'} userId=${userId ?? 'global'}`
+  );
+  return {
+    projectDir: requestedProjectDir,
+    requestedProjectName: projectName,
+    resolvedProjectName: projectName,
+    projectPath,
+    resolution: 'missing',
+  };
+}
+
 async function getProjects(userId = null, progressCallback = null) {
   const claudeDir = path.join(os.homedir(), '.claude', 'projects');
   const config = await loadProjectConfig();
@@ -649,7 +719,8 @@ async function getProjects(userId = null, progressCallback = null) {
       });
     }
 
-    let actualProjectDir = projectConfig.originalPath;
+    const scopedProject = userProjectMap.get(projectName) || null;
+    let actualProjectDir = scopedProject?.project_path || projectConfig.originalPath;
 
     if (!actualProjectDir) {
       try {
@@ -659,7 +730,6 @@ async function getProjects(userId = null, progressCallback = null) {
       }
     }
 
-    const scopedProject = userProjectMap.get(projectName) || null;
     const customName = scopedProject?.display_name || (userId == null ? projectConfig.displayName : null);
 
     const project = {
@@ -678,6 +748,23 @@ async function getProjects(userId = null, progressCallback = null) {
       cursorSessions: [],
       codexSessions: []
     };
+
+    // Load Claude sessions for manual projects too, otherwise refresh loses them from the sidebar
+    try {
+      const sessionResult = await getSessions(projectName, 5, 0, userId);
+      project.sessions = sessionResult.sessions || [];
+      project.sessionMeta = {
+        hasMore: sessionResult.hasMore,
+        total: sessionResult.total
+      };
+    } catch (e) {
+      console.warn(`Could not load Claude sessions for manual project ${projectName}:`, e.message);
+      project.sessionMeta = {
+        hasMore: false,
+        total: 0
+      };
+    }
+    applyCustomSessionNames(project.sessions, 'claude');
 
     // Try to fetch Cursor sessions for manual projects too
     try {
@@ -750,8 +837,13 @@ async function getProjects(userId = null, progressCallback = null) {
 }
 
 async function getSessions(projectName, limit = 5, offset = 0, userId = null) {
-  await ensureProjectAccess(projectName, userId);
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+  const {
+    projectDir,
+    requestedProjectName,
+    resolvedProjectName,
+    projectPath,
+    resolution,
+  } = await resolveClaudeProjectStorage(projectName, userId);
 
   try {
     const files = await fs.readdir(projectDir);
@@ -873,7 +965,13 @@ async function getSessions(projectName, limit = 5, offset = 0, userId = null) {
       limit
     };
   } catch (error) {
-    console.error(`Error reading sessions for project ${projectName}:`, error);
+    if (error.code === 'ENOENT') {
+      console.warn(
+        `[CLAUDE_SESSIONS_ENOENT] requested=${requestedProjectName} resolved=${resolvedProjectName} resolution=${resolution} projectPath=${projectPath || '(unknown)'} directory=${projectDir}`
+      );
+    } else {
+      console.error(`Error reading sessions for project ${projectName}:`, error);
+    }
     return { sessions: [], hasMore: false, total: 0 };
   }
 }
@@ -927,7 +1025,7 @@ async function parseJsonlSessions(filePath) {
             }
 
             // Track last user and assistant messages (skip system messages)
-            if (entry.message?.role === 'user' && entry.message?.content) {
+            if (!isClaudeMetaEntry(entry) && entry.message?.role === 'user' && entry.message?.content) {
               const content = entry.message.content;
 
               // Extract text from array format if needed
@@ -984,7 +1082,9 @@ async function parseJsonlSessions(filePath) {
               }
             }
 
-            session.messageCount++;
+            if (!isClaudeMetaEntry(entry)) {
+              session.messageCount++;
+            }
 
             if (entry.timestamp) {
               session.lastActivity = new Date(entry.timestamp);
@@ -1090,8 +1190,10 @@ async function parseAgentTools(filePath) {
 
 // Get messages for a specific session with pagination support
 async function getSessionMessages(projectName, sessionId, limit = null, offset = 0, userId = null) {
-  await ensureProjectAccess(projectName, userId);
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+  console.log(
+    `[CLAUDE_SESSION_MESSAGES] sessionId=${sessionId} requestedProjectName=${projectName} userId=${userId ?? 'null'} limit=${limit ?? 'null'} offset=${offset}`
+  );
+  const { projectDir } = await resolveClaudeProjectStorage(projectName, userId);
 
   try {
     const files = await fs.readdir(projectDir);
@@ -1120,7 +1222,7 @@ async function getSessionMessages(projectName, sessionId, limit = null, offset =
         if (line.trim()) {
           try {
             const entry = JSON.parse(line);
-            if (entry.sessionId === sessionId) {
+            if (entry.sessionId === sessionId && !isClaudeMetaEntry(entry)) {
               messages.push(entry);
             }
           } catch (parseError) {
@@ -1219,8 +1321,7 @@ async function renameProject(projectName, newDisplayName, userId = null) {
 
 // Delete a session from a project
 async function deleteSession(projectName, sessionId, userId = null) {
-  await ensureProjectAccess(projectName, userId);
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
+  const { projectDir } = await resolveClaudeProjectStorage(projectName, userId);
 
   try {
     const files = await fs.readdir(projectDir);
@@ -1283,10 +1384,9 @@ async function isProjectEmpty(projectName, userId = null) {
 
 // Delete a project (force=true to delete even with sessions)
 async function deleteProject(projectName, force = false, userId = null) {
-  const projectDir = path.join(os.homedir(), '.claude', 'projects', projectName);
-
   try {
     const scopedProject = await ensureProjectAccess(projectName, userId);
+    const { projectDir } = await resolveClaudeProjectStorage(projectName, userId);
     const isEmpty = await isProjectEmpty(projectName, userId);
     if (!isEmpty && !force) {
       throw new Error('Cannot delete project with existing sessions');
@@ -2174,7 +2274,7 @@ async function searchConversations(query, limit = 50, onProjectResult = null, si
             }
 
             // Track last user/assistant message for fallback title
-            if (entry.message?.content && currentSessionId && !entry.isApiErrorMessage) {
+            if (!isClaudeMetaEntry(entry) && entry.message?.content && currentSessionId && !entry.isApiErrorMessage) {
               const role = entry.message.role;
               if (role === 'user' || role === 'assistant') {
                 const text = extractText(entry.message.content);
@@ -2189,6 +2289,7 @@ async function searchConversations(query, limit = 50, onProjectResult = null, si
               }
             }
 
+            if (isClaudeMetaEntry(entry)) continue;
             if (!entry.message?.content) continue;
             if (entry.message.role !== 'user' && entry.message.role !== 'assistant') continue;
             if (entry.isApiErrorMessage) continue;

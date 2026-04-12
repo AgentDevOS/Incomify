@@ -278,6 +278,7 @@ export function useProjectsState({
 
   const loadingProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasRestoredRootRef = useRef(false);
+  const skipNextRootSessionRestoreRef = useRef(false);
 
   const persistProjectSelection = useCallback((projectName: string | null | undefined) => {
     writePersistedString(LAST_SELECTED_PROJECT_KEY, projectName ?? null);
@@ -343,6 +344,14 @@ export function useProjectsState({
       const response = await api.projects();
       const projectData = (await response.json()) as Project[];
 
+      console.log('[SessionDebug][Projects] fetched projects', projectData.map((project) => ({
+        name: project.name,
+        sessions: project.sessions?.map((session) => session.id) ?? [],
+        cursorSessions: project.cursorSessions?.map((session) => session.id) ?? [],
+        codexSessions: project.codexSessions?.map((session) => session.id) ?? [],
+        geminiSessions: project.geminiSessions?.map((session) => session.id) ?? [],
+      })));
+
       setProjects((prevProjects) => {
         if (prevProjects.length === 0) {
           return projectData;
@@ -378,10 +387,17 @@ export function useProjectsState({
   useEffect(() => {
     if (sessionId) {
       hasRestoredRootRef.current = false;
+      skipNextRootSessionRestoreRef.current = false;
       return;
     }
 
     if (isLoadingProjects || projects.length === 0 || hasRestoredRootRef.current || selectedSession) {
+      return;
+    }
+
+    if (skipNextRootSessionRestoreRef.current) {
+      skipNextRootSessionRestoreRef.current = false;
+      hasRestoredRootRef.current = true;
       return;
     }
 
@@ -634,6 +650,7 @@ export function useProjectsState({
 
   const handleSessionSelect = useCallback(
     (session: ProjectSession) => {
+      skipNextRootSessionRestoreRef.current = false;
       const sessionProjectName = session.__projectName || selectedProject?.name || null;
 
       setSelectedSession(session);
@@ -667,6 +684,18 @@ export function useProjectsState({
 
   const handleNewSession = useCallback(
     (project: Project) => {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('pendingSessionId');
+        sessionStorage.removeItem('cursorSessionId');
+      }
+      console.log('[SessionDebug][Projects] new session clicked', {
+        projectName: project.name,
+        previousSelectedProject: selectedProject?.name ?? null,
+        previousSelectedSessionId: selectedSession?.id ?? null,
+        currentPath: typeof window !== 'undefined' ? window.location.pathname : null,
+      });
+      skipNextRootSessionRestoreRef.current = true;
+      hasRestoredRootRef.current = false;
       setSelectedProject(project);
       setSelectedSession(null);
       persistProjectSelection(project.name);
@@ -677,7 +706,7 @@ export function useProjectsState({
         setSidebarOpen(false);
       }
     },
-    [isMobile, navigate, persistProjectSelection],
+    [isMobile, navigate, persistProjectSelection, selectedProject?.name, selectedSession?.id],
   );
 
   const handleSessionDelete = useCallback(

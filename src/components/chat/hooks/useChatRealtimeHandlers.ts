@@ -9,6 +9,29 @@ type PendingViewSession = {
   startedAt: number;
 };
 
+const LAST_SELECTED_PROJECT_KEY = 'lastSelectedProject';
+const LAST_SESSION_BY_PROJECT_KEY = 'lastSessionByProject';
+
+function persistLatestProjectSession(projectName: string, sessionId: string) {
+  try {
+    localStorage.setItem(LAST_SELECTED_PROJECT_KEY, projectName);
+
+    const raw = localStorage.getItem(LAST_SESSION_BY_PROJECT_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    const current = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+
+    localStorage.setItem(
+      LAST_SESSION_BY_PROJECT_KEY,
+      JSON.stringify({
+        ...current,
+        [projectName]: sessionId,
+      }),
+    );
+  } catch {
+    // Ignore storage failures; session routing will still proceed.
+  }
+}
+
 type LatestChatMessage = {
   type?: string;
   kind?: string;
@@ -228,6 +251,19 @@ export function useChatRealtimeHandlers({
         const newSessionId = msg.newSessionId;
         if (!newSessionId) break;
 
+        console.log('[SessionDebug][Realtime] session_created', {
+          newSessionId,
+          currentPath: typeof window !== 'undefined' ? window.location.pathname : null,
+          selectedProject: selectedProject?.name ?? null,
+          selectedSessionId: selectedSession?.id ?? null,
+          currentSessionId,
+          pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+        });
+
+        if (selectedProject?.name) {
+          persistLatestProjectSession(selectedProject.name, newSessionId);
+        }
+
         if (!currentSessionId || currentSessionId.startsWith('new-session-')) {
           sessionStorage.setItem('pendingSessionId', newSessionId);
           if (pendingViewSessionRef.current && !pendingViewSessionRef.current.sessionId) {
@@ -239,11 +275,24 @@ export function useChatRealtimeHandlers({
             prev.map((r) => (r.sessionId ? r : { ...r, sessionId: newSessionId })),
           );
         }
+
+        if (window.refreshProjects) {
+          setTimeout(() => window.refreshProjects?.(), 500);
+        }
         onNavigateToSession?.(newSessionId);
         break;
       }
 
       case 'complete': {
+        console.log('[SessionDebug][Realtime] complete', {
+          sid,
+          actualSessionId: msg.actualSessionId ?? null,
+          exitCode: msg.exitCode ?? null,
+          aborted: msg.aborted ?? false,
+          currentPath: typeof window !== 'undefined' ? window.location.pathname : null,
+          currentSessionId,
+          pendingSessionId: typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null,
+        });
         // Flush any remaining streaming state
         if (streamTimerRef.current) {
           clearTimeout(streamTimerRef.current);

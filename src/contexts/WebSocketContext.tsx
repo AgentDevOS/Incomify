@@ -30,14 +30,13 @@ const useWebSocketProviderState = (): WebSocketContextType => {
   const wsRef = useRef<WebSocket | null>(null);
   const unmountedRef = useRef(false); // Track if component is unmounted
   const hasConnectedRef = useRef(false); // Track if we've ever connected (to detect reconnects)
+  const pendingMessagesRef = useRef<any[]>([]);
   const [latestMessage, setLatestMessage] = useState<any>(null);
   const [isConnected, setIsConnected] = useState(false);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { token } = useAuth();
 
   useEffect(() => {
-    connect();
-    
     return () => {
       unmountedRef.current = true;
       if (reconnectTimeoutRef.current) {
@@ -45,9 +44,10 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       }
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
-  }, [token]); // everytime token changes, we reconnect
+  }, []);
 
   const connect = useCallback(() => {
     if (unmountedRef.current) return; // Prevent connection if unmounted
@@ -60,8 +60,17 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       const websocket = new WebSocket(wsUrl);
 
       websocket.onopen = () => {
+        console.log('[SessionDebug][WebSocket] open');
         setIsConnected(true);
         wsRef.current = websocket;
+        if (pendingMessagesRef.current.length > 0) {
+          const queuedMessages = [...pendingMessagesRef.current];
+          pendingMessagesRef.current = [];
+          queuedMessages.forEach((queuedMessage) => {
+            websocket.send(JSON.stringify(queuedMessage));
+          });
+          console.log('[SessionDebug][WebSocket] flushed queued messages', { count: queuedMessages.length });
+        }
         if (hasConnectedRef.current) {
           // This is a reconnect — signal so components can catch up on missed messages
           setLatestMessage({ type: 'websocket-reconnected', timestamp: Date.now() });
@@ -79,6 +88,7 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       };
 
       websocket.onclose = () => {
+        console.log('[SessionDebug][WebSocket] close');
         setIsConnected(false);
         wsRef.current = null;
         
@@ -98,14 +108,63 @@ const useWebSocketProviderState = (): WebSocketContextType => {
     }
   }, [token]); // everytime token changes, we reconnect
 
+  useEffect(() => {
+    unmountedRef.current = false;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setIsConnected(false);
+    connect();
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      setIsConnected(false);
+    };
+  }, [connect]);
+
   const sendMessage = useCallback((message: any) => {
     const socket = wsRef.current;
     if (socket && socket.readyState === WebSocket.OPEN) {
+      if (message?.type && (
+        message.type === 'claude-command' ||
+        message.type === 'cursor-command' ||
+        message.type === 'codex-command' ||
+        message.type === 'gemini-command' ||
+        message.type === 'abort-session' ||
+        message.type === 'check-session-status'
+      )) {
+        console.log('[SessionDebug][WebSocket] send', {
+          type: message.type,
+          topLevelSessionId: message.sessionId ?? null,
+          optionSessionId: message.options?.sessionId ?? null,
+          resume: message.options?.resume ?? null,
+          cwd: message.options?.cwd ?? null,
+          projectPath: message.options?.projectPath ?? null,
+          commandPreview: typeof message.command === 'string' ? message.command.slice(0, 120) : null,
+        });
+      }
       socket.send(JSON.stringify(message));
     } else {
-      console.warn('WebSocket not connected');
+      pendingMessagesRef.current.push(message);
+      console.warn('WebSocket not connected; queued message', {
+        type: message?.type ?? null,
+        queueSize: pendingMessagesRef.current.length,
+      });
+      connect();
     }
-  }, []);
+  }, [connect]);
 
   const value: WebSocketContextType = useMemo(() =>
   ({

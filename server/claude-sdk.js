@@ -612,6 +612,17 @@ async function queryClaudeSDK(command, options = {}, ws) {
     // Map CLI options to SDK format
     const sdkOptions = mapCliOptionsToSDK(normalizedOptions);
 
+    console.log('[SessionDebug][Server][Claude] query start', {
+      requestedSessionId: options?.sessionId ?? null,
+      normalizedSessionId: sessionId ?? null,
+      writerSessionId: typeof ws?.getSessionId === 'function' ? ws.getSessionId() : null,
+      resume: sdkOptions.resume ?? null,
+      cwd: normalizedOptions.cwd ?? null,
+      projectPath: normalizedOptions.projectPath ?? null,
+      commandPreview: typeof command === 'string' ? command.slice(0, 120) : null,
+      sessionSummary: sessionSummary ?? null,
+    });
+
     // Load MCP configuration
     const mcpServers = await loadMcpConfig(normalizedOptions.cwd);
     if (mcpServers) {
@@ -756,6 +767,11 @@ async function queryClaudeSDK(command, options = {}, ws) {
       if (message.session_id && !capturedSessionId) {
 
         capturedSessionId = message.session_id;
+        console.log('[SessionDebug][Server][Claude] session captured', {
+          capturedSessionId,
+          requestedSessionId: sessionId ?? null,
+          writerSessionIdBeforeSet: typeof ws?.getSessionId === 'function' ? ws.getSessionId() : null,
+        });
         addSession(capturedSessionId, queryInstance, tempImagePaths, tempDir, ws);
 
         // Set session ID on writer
@@ -808,6 +824,12 @@ async function queryClaudeSDK(command, options = {}, ws) {
     await cleanupTempFiles(tempImagePaths, tempDir);
 
     // Send completion event
+    console.log('[SessionDebug][Server][Claude] complete', {
+      requestedSessionId: sessionId ?? null,
+      capturedSessionId: capturedSessionId ?? null,
+      writerSessionId: typeof ws?.getSessionId === 'function' ? ws.getSessionId() : null,
+      isNewSession: !sessionId && !!command,
+    });
     ws.send(createNormalizedMessage({ kind: 'complete', exitCode: 0, isNewSession: !sessionId && !!command, sessionId: capturedSessionId, provider: 'claude' }));
     notifyRunStopped({
       userId: ws?.userId || null,

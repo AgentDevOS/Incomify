@@ -23,6 +23,41 @@ function resolveBasePath(env) {
   return '/'
 }
 
+function redirectBaseWithoutTrailingSlash(base) {
+  if (!base || base === '/') {
+    return null
+  }
+
+  const normalizedBase = base.endsWith('/') ? base : `${base}/`
+  const bareBase = normalizedBase.replace(/\/+$/, '')
+
+  if (!bareBase || bareBase === '/') {
+    return null
+  }
+
+  const applyRedirect = (req, res, next) => {
+    const requestUrl = req.url || '/'
+    if (requestUrl === bareBase || requestUrl.startsWith(`${bareBase}?`)) {
+      const suffix = requestUrl.slice(bareBase.length)
+      res.statusCode = 302
+      res.setHeader('Location', `${normalizedBase}${suffix.startsWith('?') ? suffix : ''}`)
+      res.end()
+      return
+    }
+    next()
+  }
+
+  return {
+    name: 'redirect-base-without-trailing-slash',
+    configureServer(server) {
+      server.middlewares.use(applyRedirect)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(applyRedirect)
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
   const env = loadEnv(mode, process.cwd(), '')
@@ -40,10 +75,11 @@ export default defineConfig(({ mode }) => {
   const base = resolveBasePath(env)
   const hmrPath = `${base}__vite_ws`
   const packageJson = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
+  const baseRedirectPlugin = redirectBaseWithoutTrailingSlash(base)
 
   return {
     base,
-    plugins: [react()],
+    plugins: [react(), ...(baseRedirectPlugin ? [baseRedirectPlugin] : [])],
     resolve: {
       alias: {
         '@shared': path.resolve(process.cwd(), 'shared')
