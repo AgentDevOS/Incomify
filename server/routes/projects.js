@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, promises as fs } from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
+import { fileURLToPath } from 'url';
 import { addProjectManually } from '../projects.js';
 import { userDb, userProjectsDb } from '../database/db.js';
 import {
@@ -12,6 +13,18 @@ import {
 } from '../utils/workspace-paths.js';
 
 const router = express.Router();
+const ROUTES_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_STAGE_GATED_WORKFLOW_KIT_DIR = path.resolve(
+  ROUTES_DIRECTORY,
+  '../../../incomify-tpl/stage-gated-workflow-kit',
+);
+const STAGE_GATED_WORKFLOW_KIT_DIR =
+  process.env.STAGE_GATED_WORKFLOW_KIT_DIR
+  || DEFAULT_STAGE_GATED_WORKFLOW_KIT_DIR;
+const STAGE_GATED_WORKFLOW_INSTALL_SCRIPT = path.join(
+  STAGE_GATED_WORKFLOW_KIT_DIR,
+  'install-plan-a.sh',
+);
 
 function sanitizeGitError(message, token) {
   if (!message || !token) return message;
@@ -106,6 +119,94 @@ export async function allocateWorkspaceDirectory(userId, parentPath = null) {
   }
 
   throw new Error('Failed to allocate a unique workspace directory');
+}
+
+async function installStageGatedWorkflowKit(targetProjectPath, projectName, onProgress = null) {
+  if (!targetProjectPath?.trim()) {
+    throw new Error('Target project path is required for stage-gated workflow kit installation');
+  }
+
+  if (!projectName?.trim()) {
+    throw new Error('Project name is required for stage-gated workflow kit installation');
+  }
+
+  try {
+    await fs.access(STAGE_GATED_WORKFLOW_INSTALL_SCRIPT);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw new Error(`Stage-gated workflow installer not found: ${STAGE_GATED_WORKFLOW_INSTALL_SCRIPT}`);
+    }
+    throw error;
+  }
+
+  return new Promise((resolve, reject) => {
+    const installerProcess = spawn(
+      'bash',
+      [STAGE_GATED_WORKFLOW_INSTALL_SCRIPT, targetProjectPath, projectName],
+      {
+        cwd: targetProjectPath,
+        env: process.env,
+      },
+    );
+
+    let combinedOutput = '';
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
+
+    const consumeChunk = (chunk, currentBuffer) => {
+      const nextBuffer = currentBuffer + chunk.toString();
+      const lines = nextBuffer.split(/\r?\n/);
+      const remainder = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+        if (!trimmedLine) {
+          continue;
+        }
+
+        combinedOutput += `${trimmedLine}\n`;
+        onProgress?.(trimmedLine);
+      }
+
+      return remainder;
+    };
+
+    installerProcess.stdout.on('data', (chunk) => {
+      stdoutBuffer = consumeChunk(chunk, stdoutBuffer);
+    });
+
+    installerProcess.stderr.on('data', (chunk) => {
+      stderrBuffer = consumeChunk(chunk, stderrBuffer);
+    });
+
+    installerProcess.on('error', (error) => {
+      reject(new Error(`Failed to start stage-gated workflow installer: ${error.message}`));
+    });
+
+    installerProcess.on('close', (code) => {
+      for (const trailingLine of [stdoutBuffer, stderrBuffer]) {
+        const trimmedLine = trailingLine.trim();
+        if (!trimmedLine) {
+          continue;
+        }
+
+        combinedOutput += `${trimmedLine}\n`;
+        onProgress?.(trimmedLine);
+      }
+
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      const errorOutput = combinedOutput.trim();
+      reject(new Error(
+        errorOutput
+          ? `Stage-gated workflow kit installation failed: ${errorOutput}`
+          : `Stage-gated workflow kit installation failed with exit code ${code}`,
+      ));
+    });
+  });
 }
 
 // System-critical paths that should never be used as workspace directories
@@ -290,6 +391,13 @@ router.post('/create-workspace', async (req, res) => {
       }
 
       const managedWorkspace = await allocateWorkspaceDirectory(req.user.id);
+      try {
+        await installStageGatedWorkflowKit(managedWorkspace.workspacePath, requestedWorkspaceName);
+      } catch (error) {
+        await fs.rm(managedWorkspace.workspacePath, { recursive: true, force: true });
+        throw error;
+      }
+
       const project = await addProjectManually(
         managedWorkspace.workspacePath,
         requestedWorkspaceName,
@@ -368,6 +476,17 @@ router.post('/create-workspace', async (req, res) => {
           throw new Error(`Failed to clone repository: ${error.message}`);
         }
 
+        try {
+          await installStageGatedWorkflowKit(clonePath, requestedWorkspaceName);
+        } catch (error) {
+          try {
+            await fs.rm(absolutePath, { recursive: true, force: true });
+          } catch {
+            // ignore cleanup failure
+          }
+          throw error;
+        }
+
         const project = await addProjectManually(clonePath, requestedWorkspaceName, req.user.id);
 
         return res.json({
@@ -375,6 +494,13 @@ router.post('/create-workspace', async (req, res) => {
           project,
           message: 'New workspace created and repository cloned successfully'
         });
+      }
+
+      try {
+        await installStageGatedWorkflowKit(absolutePath, requestedWorkspaceName);
+      } catch (error) {
+        await fs.rm(absolutePath, { recursive: true, force: true });
+        throw error;
       }
 
       const project = await addProjectManually(absolutePath, requestedWorkspaceName, req.user.id);
@@ -536,10 +662,20 @@ router.get('/clone-progress', async (req, res) => {
     gitProcess.on('close', async (code) => {
       if (code === 0) {
         try {
+          sendEvent('progress', { message: 'Installing stage-gated workflow kit...' });
+          await installStageGatedWorkflowKit(clonePath, requestedWorkspaceName, (message) => {
+            sendEvent('progress', { message });
+          });
+
           const project = await addProjectManually(clonePath, requestedWorkspaceName, req.user.id);
-          sendEvent('complete', { project, message: 'Repository cloned successfully' });
+          sendEvent('complete', { project, message: 'Repository cloned and project initialized successfully' });
         } catch (error) {
-          sendEvent('error', { message: `Clone succeeded but failed to add project: ${error.message}` });
+          try {
+            await fs.rm(absolutePath, { recursive: true, force: true });
+          } catch (cleanupError) {
+            console.error('Failed to clean up after project initialization failure:', cleanupError);
+          }
+          sendEvent('error', { message: `Clone succeeded but project initialization failed: ${error.message}` });
         }
       } else {
         const sanitizedError = sanitizeGitError(lastError, githubToken);
