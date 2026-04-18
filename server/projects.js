@@ -67,6 +67,7 @@ import { open } from 'sqlite';
 import os from 'os';
 import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames, userProjectsDb } from './database/db.js';
+import { ensureProjectDeployDirectories } from './services/deployment.js';
 
 function isClaudeMetaEntry(entry) {
   return entry?.isMeta === true;
@@ -603,6 +604,7 @@ async function getProjects(userId = null, progressCallback = null) {
       const fullPath = actualProjectDir;
 
       const project = {
+        id: scopedProject?.id ?? null,
         name: entry.name,
         path: actualProjectDir,
         displayName: customName || autoDisplayName,
@@ -733,6 +735,7 @@ async function getProjects(userId = null, progressCallback = null) {
     const customName = scopedProject?.display_name || (userId == null ? projectConfig.displayName : null);
 
     const project = {
+      id: scopedProject?.id ?? null,
       name: projectName,
       path: actualProjectDir,
       displayName: customName || await generateDisplayName(projectName, actualProjectDir),
@@ -1489,9 +1492,17 @@ async function addProjectManually(projectPath, displayName = null, userId = null
       displayName: displayName?.trim() || null,
       source: 'manual',
     });
+
+    if (scopedProject?.id != null) {
+      await ensureProjectDeployDirectories({
+        userId,
+        projectId: scopedProject.id,
+      });
+    }
   }
 
   return {
+    id: scopedProject?.id ?? null,
     name: projectName,
     path: absolutePath,
     fullPath: absolutePath,

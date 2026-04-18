@@ -109,6 +109,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(workspaceData),
     }),
+  getProjectDeployment: (projectName) =>
+    authenticatedFetch(`/api/projects/${projectName}/deployment`),
+  syncProjectDeployment: (projectName, payload) =>
+    authenticatedFetch(`/api/projects/${projectName}/deployment/sync`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   readFile: (projectName, filePath) =>
     authenticatedFetch(`/api/projects/${projectName}/file?filePath=${encodeURIComponent(filePath)}`),
   saveFile: (projectName, filePath, content) =>

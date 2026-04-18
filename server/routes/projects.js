@@ -7,6 +7,11 @@ import { fileURLToPath } from 'url';
 import { addProjectManually } from '../projects.js';
 import { userDb, userProjectsDb } from '../database/db.js';
 import {
+  deployProjectArtifact,
+  ensureProjectDeployDirectories,
+  getDeployBaseUrl,
+} from '../services/deployment.js';
+import {
   getConfiguredWorkspacesRoot,
   getLegacyWorkspaceRootForUserId,
   getWorkspaceRootForPublicId,
@@ -521,6 +526,40 @@ router.post('/create-workspace', async (req, res) => {
   }
 });
 
+function getProjectRecordOrThrow(userId, projectName) {
+  const normalizedProjectName = String(projectName ?? '').trim();
+  if (!normalizedProjectName) {
+    const error = new Error('Project name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const projectRecord = userProjectsDb.getProject(userId, normalizedProjectName);
+  if (!projectRecord) {
+    const error = new Error('Project not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return projectRecord;
+}
+
+function resolveDeploymentBaseUrl(req) {
+  const configuredBaseUrl = getDeployBaseUrl();
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
+  }
+
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').trim();
+  const forwardedHost = String(req.headers['x-forwarded-host'] || req.get('host') || '').trim();
+
+  if (!forwardedHost) {
+    return null;
+  }
+
+  return `${forwardedProto}://${forwardedHost}/aisoft/deploy`;
+}
+
 /**
  * Helper function to get GitHub token from database
  */
@@ -541,6 +580,62 @@ async function getGithubTokenById(tokenId, userId) {
 
   return null;
 }
+
+/**
+ * Get deployment info for a project
+ * GET /api/projects/:projectName/deployment
+ */
+router.get('/:projectName/deployment', async (req, res) => {
+  try {
+    const projectRecord = getProjectRecordOrThrow(req.user.id, req.params.projectName);
+    const deployment = await ensureProjectDeployDirectories({
+      userId: req.user.id,
+      projectId: projectRecord.id,
+      baseUrl: resolveDeploymentBaseUrl(req),
+    });
+
+    res.json({
+      success: true,
+      deployment,
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    console.error('Error getting project deployment info:', error);
+    res.status(statusCode).json({ error: error.message || 'Failed to load deployment info' });
+  }
+});
+
+/**
+ * Copy a project artifact into the unified deployment directory
+ * POST /api/projects/:projectName/deployment/sync
+ */
+router.post('/:projectName/deployment/sync', async (req, res) => {
+  try {
+    const { artifactType, sourcePath, clearTarget = true } = req.body || {};
+    const projectRecord = getProjectRecordOrThrow(req.user.id, req.params.projectName);
+
+    const deployment = await deployProjectArtifact({
+      userId: req.user.id,
+      projectId: projectRecord.id,
+      projectPath: projectRecord.project_path,
+      artifactType,
+      baseUrl: resolveDeploymentBaseUrl(req),
+      sourcePath,
+      clearTarget: clearTarget !== false,
+    });
+
+    res.json({
+      success: true,
+      deployment,
+    });
+  } catch (error) {
+    const statusCode = error.code === 'ENOENT'
+      ? 404
+      : error.statusCode || 500;
+    console.error('Error syncing project deployment artifact:', error);
+    res.status(statusCode).json({ error: error.message || 'Failed to sync deployment artifact' });
+  }
+});
 
 /**
  * Clone repository with progress streaming (SSE)

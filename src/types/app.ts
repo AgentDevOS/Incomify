@@ -31,6 +31,7 @@ export interface ProjectTaskmasterInfo {
 }
 
 export interface Project {
+  id?: number | null;
   name: string;
   displayName: string;
   fullPath: string;
