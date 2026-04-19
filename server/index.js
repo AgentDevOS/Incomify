@@ -70,6 +70,10 @@ import { createNormalizedMessage } from './providers/types.js';
 import { startEnabledPluginServers, stopAllPlugins, getPluginPort } from './utils/plugin-process-manager.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
 import { configureWebPush } from './services/vapid-keys.js';
+import {
+    closeDeploymentWatchers,
+    initializeDeploymentWatchers,
+} from './services/deployment-watcher.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { getConnectableHost } from '../shared/networkHosts.js';
@@ -2579,6 +2583,7 @@ async function startServer() {
 
             // Start watching the projects folder for changes
             await setupProjectsWatcher();
+            await initializeDeploymentWatchers();
 
             // Start server-side plugin processes for enabled plugins
             startEnabledPluginServers().catch(err => {
@@ -2588,6 +2593,7 @@ async function startServer() {
 
         // Clean up plugin processes on shutdown
         const shutdownPlugins = async () => {
+            await closeDeploymentWatchers();
             await stopAllPlugins();
             process.exit(0);
         };

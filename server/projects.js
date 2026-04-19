@@ -68,6 +68,10 @@ import os from 'os';
 import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames, userProjectsDb } from './database/db.js';
 import { ensureProjectDeployDirectories } from './services/deployment.js';
+import {
+  registerProjectDeploymentWatcher,
+  unregisterProjectDeploymentWatcher,
+} from './services/deployment-watcher.js';
 
 function isClaudeMetaEntry(entry) {
   return entry?.isMeta === true;
@@ -1435,7 +1439,10 @@ async function deleteProject(projectName, force = false, userId = null) {
       delete config[projectName];
       await saveProjectConfig(config);
     } else {
-      userProjectsDb.deleteProject(userId, projectName);
+      const deleted = userProjectsDb.deleteProject(userId, projectName);
+      if (deleted && scopedProject?.id != null) {
+        await unregisterProjectDeploymentWatcher(userId, scopedProject.id);
+      }
     }
 
     return true;
@@ -1498,6 +1505,7 @@ async function addProjectManually(projectPath, displayName = null, userId = null
         userId,
         projectId: scopedProject.id,
       });
+      await registerProjectDeploymentWatcher(scopedProject);
     }
   }
 

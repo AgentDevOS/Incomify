@@ -113,6 +113,11 @@ function resolveToolApproval(requestId, decision) {
   }
 }
 
+function isMissingClaudeConversationError(error) {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  return /No conversation found with session ID/i.test(message);
+}
+
 // Match stored permission entries against a tool + input combo.
 // This only supports exact tool names and the Bash(command:*) shorthand
 // used by the UI; it intentionally does not implement full glob semantics,
@@ -850,6 +855,26 @@ async function queryClaudeSDK(command, options = {}, ws) {
 
     // Clean up temporary image files on error
     await cleanupTempFiles(tempImagePaths, tempDir);
+
+    const shouldRetryWithoutResume =
+      Boolean(sessionId) &&
+      !options.__resumeFallbackAttempt &&
+      isMissingClaudeConversationError(error);
+
+    if (shouldRetryWithoutResume) {
+      console.warn('[SessionDebug][Server][Claude] resume failed, retrying without session', {
+        staleSessionId: sessionId,
+        projectPath: normalizedOptions.projectPath ?? null,
+        cwd: normalizedOptions.cwd ?? null,
+      });
+
+      return queryClaudeSDK(command, {
+        ...options,
+        sessionId: null,
+        resume: false,
+        __resumeFallbackAttempt: true,
+      }, ws);
+    }
 
     // Send error to WebSocket
     ws.send(createNormalizedMessage({ kind: 'error', content: error.message, sessionId: capturedSessionId || sessionId || null, provider: 'claude' }));

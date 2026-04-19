@@ -133,6 +133,13 @@
   },
   "projectWizard": {
     "title": "创建新项目",
+    "simple": {
+      "title": "项目名称",
+      "projectName": "项目名称",
+      "placeholder": "例如：frontend-team",
+      "help": "确认后会自动基于默认模板创建你的个人项目。",
+      "creating": "创建中..."
+    },
     "steps": {
       "type": "类型",
       "configure": "配置",
@@ -218,6 +225,8 @@
     },
     "errors": {
       "selectType": "请选择您已有现有工作区还是想创建新工作区",
+      "provideProjectName": "请输入项目名称",
+      "duplicateProjectName": "该项目名称已存在，请重新输入",
       "providePath": "请提供工作区路径",
       "failedToCreate": "创建工作区失败",
       "failedToCreateFolder": "创建文件夹失败"

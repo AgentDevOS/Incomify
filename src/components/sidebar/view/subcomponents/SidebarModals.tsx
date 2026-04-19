@@ -83,6 +83,7 @@ export default function SidebarModals({
           <ProjectCreationWizard
             onClose={onCloseNewProject}
             onProjectCreated={onProjectCreated}
+            existingProjects={projects}
           />,
           document.body,
         )}

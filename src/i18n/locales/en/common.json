@@ -133,6 +133,13 @@
   },
   "projectWizard": {
     "title": "Create New Project",
+    "simple": {
+      "title": "Project Name",
+      "projectName": "Project Name",
+      "placeholder": "e.g. frontend-team",
+      "help": "Confirm to create your personal project from the default template.",
+      "creating": "Creating..."
+    },
     "steps": {
       "type": "Type",
       "configure": "Configure",
@@ -218,6 +225,8 @@
     },
     "errors": {
       "selectType": "Please select whether you have an existing workspace or want to create a new one",
+      "provideProjectName": "Please enter a project name",
+      "duplicateProjectName": "A project with this name already exists. Please enter a different name.",
       "providePath": "Please provide a workspace path",
       "failedToCreate": "Failed to create workspace",
       "failedToCreateFolder": "Failed to create folder"

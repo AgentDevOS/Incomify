@@ -214,6 +214,33 @@ async function installStageGatedWorkflowKit(targetProjectPath, projectName, onPr
   });
 }
 
+function normalizeProjectLabel(value) {
+  return String(value ?? '').trim().toLocaleLowerCase();
+}
+
+function ensureUniqueProjectDisplayName(userId, projectName) {
+  const normalizedName = normalizeProjectLabel(projectName);
+  if (!normalizedName) {
+    throw new Error('Project name is required');
+  }
+
+  const existingProjects = userProjectsDb.getProjectsByUser(userId);
+  const duplicateProject = existingProjects.find((project) => {
+    const candidates = [
+      project.display_name,
+      project.project_name,
+    ];
+
+    return candidates.some((candidate) => normalizeProjectLabel(candidate) === normalizedName);
+  });
+
+  if (duplicateProject) {
+    const error = new Error('A project with this name already exists. Please choose a different name.');
+    error.statusCode = 409;
+    throw error;
+  }
+}
+
 // System-critical paths that should never be used as workspace directories
 export const FORBIDDEN_PATHS = [
   // Unix
@@ -395,6 +422,8 @@ router.post('/create-workspace', async (req, res) => {
         return res.status(400).json({ error: 'name is required for workspace creation' });
       }
 
+      ensureUniqueProjectDisplayName(req.user.id, requestedWorkspaceName);
+
       const managedWorkspace = await allocateWorkspaceDirectory(req.user.id);
       try {
         await installStageGatedWorkflowKit(managedWorkspace.workspacePath, requestedWorkspaceName);
@@ -420,6 +449,8 @@ router.post('/create-workspace', async (req, res) => {
       if (!requestedWorkspaceName) {
         return res.status(400).json({ error: 'name is required for workspace creation' });
       }
+
+      ensureUniqueProjectDisplayName(req.user.id, requestedWorkspaceName);
 
       let requestedParentPath = null;
       if (requestedWorkspacePath) {
@@ -519,7 +550,7 @@ router.post('/create-workspace', async (req, res) => {
 
   } catch (error) {
     console.error('Error creating workspace:', error);
-    res.status(500).json({
+    res.status(error.statusCode || 500).json({
       error: error.message || 'Failed to create workspace',
       details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });

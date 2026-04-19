@@ -279,6 +279,8 @@ export function useProjectsState({
   const loadingProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasRestoredRootRef = useRef(false);
   const skipNextRootSessionRestoreRef = useRef(false);
+  const projectsMutationVersionRef = useRef(0);
+  const projectsFetchRequestSeqRef = useRef(0);
 
   const persistProjectSelection = useCallback((projectName: string | null | undefined) => {
     writePersistedString(LAST_SELECTED_PROJECT_KEY, projectName ?? null);
@@ -337,12 +339,22 @@ export function useProjectsState({
   }, []);
 
   const fetchProjects = useCallback(async ({ showLoadingState = true }: FetchProjectsOptions = {}) => {
+    const requestSeq = ++projectsFetchRequestSeqRef.current;
+    const mutationVersionAtStart = projectsMutationVersionRef.current;
+
     try {
       if (showLoadingState) {
         setIsLoadingProjects(true);
       }
       const response = await api.projects();
       const projectData = (await response.json()) as Project[];
+
+      if (
+        requestSeq !== projectsFetchRequestSeqRef.current ||
+        mutationVersionAtStart !== projectsMutationVersionRef.current
+      ) {
+        return;
+      }
 
       console.log('[SessionDebug][Projects] fetched projects', projectData.map((project) => ({
         name: project.name,
@@ -711,6 +723,8 @@ export function useProjectsState({
 
   const handleSessionDelete = useCallback(
     (sessionIdToDelete: string) => {
+      projectsMutationVersionRef.current += 1;
+
       if (selectedSession?.id === sessionIdToDelete) {
         setSelectedSession(null);
         navigate('/');
@@ -787,6 +801,8 @@ export function useProjectsState({
 
   const handleProjectDelete = useCallback(
     (projectName: string) => {
+      projectsMutationVersionRef.current += 1;
+
       if (selectedProject?.name === projectName) {
         setSelectedProject(null);
         setSelectedSession(null);

@@ -706,6 +706,15 @@ const userProjectsDb = {
     }));
   },
 
+  getAllProjects: () => {
+    return db.prepare(
+      'SELECT * FROM user_projects ORDER BY user_id ASC, id ASC'
+    ).all().map((row) => ({
+      ...row,
+      project_path: normalizeProjectPathForUser(row.user_id, row.project_path),
+    }));
+  },
+
   countProjectsForUser: (userId) => {
     const row = db.prepare('SELECT COUNT(*) AS count FROM user_projects WHERE user_id = ?').get(userId);
     return row?.count || 0;
