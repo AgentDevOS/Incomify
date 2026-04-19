@@ -1,7 +1,12 @@
 import path from 'path';
 import { promises as fs } from 'fs';
+import { userDb } from '../database/db.js';
 
 export const DEPLOYABLE_ARTIFACT_TYPES = ['android', 'ios', 'mini-program', 'prototype', 'web'];
+const ARTIFACT_SOURCE_PATH_ALLOWLIST = {
+  prototype: new Set(['prototype']),
+  web: new Set(['dist']),
+};
 
 const DEFAULT_DEPLOY_ROOT = '/Users/steven/workspace/deploy';
 
@@ -16,6 +21,16 @@ function normalizeIdentifier(value, label) {
 
 function encodeUrlSegment(value) {
   return encodeURIComponent(String(value ?? '').trim());
+}
+
+function resolveDeployUserSegment(userId) {
+  const normalizedUserId = normalizeIdentifier(userId, 'User ID');
+  const publicId = userDb.getPublicId(normalizedUserId);
+  if (!publicId) {
+    throw new Error(`No public deploy identifier found for user ${normalizedUserId}`);
+  }
+
+  return normalizeIdentifier(publicId, 'User public ID');
 }
 
 function normalizeBaseUrl(value = '') {
@@ -75,10 +90,24 @@ export function validateArtifactType(artifactType) {
   return normalizedArtifactType;
 }
 
+function validateArtifactSourcePath(artifactType, sourcePath) {
+  const trimmedSourcePath = String(sourcePath ?? '').trim();
+  if (!trimmedSourcePath) {
+    throw new Error('Source path is required');
+  }
+
+  const allowedSourcePaths = ARTIFACT_SOURCE_PATH_ALLOWLIST[artifactType];
+  if (allowedSourcePaths && !allowedSourcePaths.has(trimmedSourcePath)) {
+    throw new Error(`Source path ${trimmedSourcePath} is not allowed for artifact type ${artifactType}`);
+  }
+
+  return trimmedSourcePath;
+}
+
 export function getProjectDeployRoot({ userId, projectId }) {
   return path.join(
     getDeployRoot(),
-    normalizeIdentifier(userId, 'User ID'),
+    resolveDeployUserSegment(userId),
     normalizeIdentifier(projectId, 'Project ID'),
   );
 }
@@ -104,7 +133,7 @@ export function buildArtifactPublicUrl({
   }
 
   const urlPathSegments = [
-    encodeUrlSegment(userId),
+    encodeUrlSegment(resolveDeployUserSegment(userId)),
     encodeUrlSegment(projectId),
     encodeUrlSegment(validateArtifactType(artifactType)),
   ];
@@ -121,9 +150,11 @@ export function buildArtifactPublicUrl({
 export function getProjectDeploymentInfo({ userId, projectId, baseUrl = null }) {
   const rootPath = getProjectDeployRoot({ userId, projectId });
   const resolvedBaseUrl = normalizeBaseUrl(baseUrl || getDeployBaseUrl()) || null;
+  const userPublicId = resolveDeployUserSegment(userId);
 
   return {
     userId,
+    userPublicId,
     projectId,
     rootPath,
     baseUrl: resolvedBaseUrl,
@@ -142,7 +173,25 @@ export function getProjectDeploymentInfo({ userId, projectId, baseUrl = null }) 
 }
 
 export async function ensureProjectDeployDirectories({ userId, projectId, baseUrl = null }) {
+  const legacyProjectDeployRoot = path.join(
+    getDeployRoot(),
+    normalizeIdentifier(userId, 'User ID'),
+    normalizeIdentifier(projectId, 'Project ID'),
+  );
   const projectDeployRoot = getProjectDeployRoot({ userId, projectId });
+
+  if (legacyProjectDeployRoot !== projectDeployRoot) {
+    const [legacyExists, targetExists] = await Promise.all([
+      fs.access(legacyProjectDeployRoot).then(() => true).catch(() => false),
+      fs.access(projectDeployRoot).then(() => true).catch(() => false),
+    ]);
+
+    if (legacyExists && !targetExists) {
+      await fs.mkdir(path.dirname(projectDeployRoot), { recursive: true });
+      await fs.rename(legacyProjectDeployRoot, projectDeployRoot);
+    }
+  }
+
   await fs.mkdir(projectDeployRoot, { recursive: true });
 
   await Promise.all(
@@ -164,9 +213,10 @@ export async function deployProjectArtifact({
   clearTarget = true,
 }) {
   const normalizedArtifactType = validateArtifactType(artifactType);
+  const normalizedSourcePath = validateArtifactSourcePath(normalizedArtifactType, sourcePath);
   const deploymentInfo = await ensureProjectDeployDirectories({ userId, projectId, baseUrl });
   const targetPath = getArtifactDeployPath({ userId, projectId, artifactType: normalizedArtifactType });
-  const resolvedSourcePath = await resolveProjectScopedSourcePath(projectPath, sourcePath);
+  const resolvedSourcePath = await resolveProjectScopedSourcePath(projectPath, normalizedSourcePath);
   const sourceStats = await fs.stat(resolvedSourcePath);
 
   if (clearTarget) {

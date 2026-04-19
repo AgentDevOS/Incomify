@@ -96,7 +96,7 @@
     "projectFiles": "Project Files",
     "openPrototype": "Open Prototype",
     "openingPrototype": "Opening...",
-    "prototypeNotAvailable": "Prototype is not available yet. Generate prototype/index.html or docs/index.html first.",
+    "prototypeNotAvailable": "Prototype is not available yet. Generate prototype/index.html first.",
     "prototypeOpenFailed": "Failed to open prototype"
   },
   "fileTree": {

@@ -2,7 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
-import { getConnectableHost, normalizeLoopbackHost } from './shared/networkHosts.js'
+import { getConnectableHost, getProxyTargetHost, normalizeLoopbackHost } from './shared/networkHosts.js'
 
 function resolveBasePath(env) {
   const configuredBase = env.APP_BASE_URL || env.BASE_URL
@@ -69,7 +69,7 @@ export default defineConfig(({ mode }) => {
   // URLs and proxy targets.
   const host = normalizeLoopbackHost(configuredHost)
 
-  const proxyHost = getConnectableHost(configuredHost)
+  const proxyHost = getProxyTargetHost(configuredHost)
   // TODO: Remove support for legacy PORT variables in all locations in a future major release, leaving only SERVER_PORT.
   const serverPort = env.SERVER_PORT || env.PORT || 3001
   const base = resolveBasePath(env)

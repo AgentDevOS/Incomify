@@ -20,3 +20,12 @@ export function getConnectableHost(host) {
   }
   return isWildcardHost(host) || isLoopbackHost(host) ? 'localhost' : host;
 }
+
+// Use an explicit IPv4 loopback for local proxy targets to avoid resolving
+// "localhost" to an unrelated service bound only on ::1.
+export function getProxyTargetHost(host) {
+  if (!host) {
+    return '127.0.0.1';
+  }
+  return isWildcardHost(host) || isLoopbackHost(host) ? '127.0.0.1' : host;
+}

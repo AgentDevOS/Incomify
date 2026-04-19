@@ -10,7 +10,6 @@ import {
 
 const WATCH_DEBOUNCE_MS = 1500;
 const WATCHED_DEPLOYMENT_RULES = [
-  { artifactType: 'prototype', sourcePath: 'docs' },
   { artifactType: 'prototype', sourcePath: 'prototype' },
   { artifactType: 'web', sourcePath: 'dist' },
 ];

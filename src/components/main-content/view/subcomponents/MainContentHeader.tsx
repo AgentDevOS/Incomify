@@ -92,7 +92,7 @@ export default function MainContentHeader({
     setIsOpeningPrototype(true);
 
     try {
-      const syncCandidates = ['prototype', 'docs'];
+      const syncCandidates = ['prototype'];
       let prototypeUrl = '';
       let lastErrorMessage = '';
 

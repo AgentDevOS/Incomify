@@ -96,7 +96,7 @@
     "projectFiles": "项目文件",
     "openPrototype": "打开原型",
     "openingPrototype": "打开中...",
-    "prototypeNotAvailable": "原型暂不可用，请先生成 prototype/index.html 或 docs/index.html。",
+    "prototypeNotAvailable": "原型暂不可用，请先生成 prototype/index.html。",
     "prototypeOpenFailed": "打开原型失败"
   },
   "fileTree": {
