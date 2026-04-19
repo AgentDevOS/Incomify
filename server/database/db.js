@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import {
+  getDeprecatedWorkspaceRootForPublicId,
   getConfiguredWorkspacesRoot,
   getLegacyWorkspaceRootForUserId,
   getWorkspaceRootForPublicId,
@@ -663,8 +664,9 @@ function normalizeProjectPathForUser(userId, projectPath) {
 
   const workspacesRoot = getConfiguredWorkspacesRoot();
   const legacyRoot = getLegacyWorkspaceRootForUserId(userId, workspacesRoot);
+  const deprecatedRoot = getDeprecatedWorkspaceRootForPublicId(publicId, workspacesRoot);
   const workspaceRoot = getWorkspaceRootForPublicId(publicId, workspacesRoot);
-  return normalizeLegacyWorkspacePath(projectPath, legacyRoot, workspaceRoot);
+  return normalizeLegacyWorkspacePath(projectPath, [legacyRoot, deprecatedRoot], workspaceRoot);
 }
 
 const userProjectsDb = {

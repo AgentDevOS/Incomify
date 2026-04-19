@@ -13,6 +13,7 @@ import {
 } from '../services/deployment.js';
 import {
   getConfiguredWorkspacesRoot,
+  getDeprecatedWorkspaceRootForPublicId,
   getLegacyWorkspaceRootForUserId,
   getWorkspaceRootForPublicId,
 } from '../utils/workspace-paths.js';
@@ -57,17 +58,50 @@ export function getWorkspaceRootForUser(userId) {
   return getWorkspaceRootForPublicId(publicId, WORKSPACES_ROOT);
 }
 
-export async function ensureWorkspaceRootForUser(userId) {
-  const legacyWorkspaceRoot = getLegacyWorkspaceRootForUser(userId);
-  const workspaceRoot = getWorkspaceRootForUser(userId);
-
-  if (legacyWorkspaceRoot !== workspaceRoot && existsSync(legacyWorkspaceRoot) && !existsSync(workspaceRoot)) {
-    await fs.mkdir(path.dirname(workspaceRoot), { recursive: true });
-    await fs.rename(legacyWorkspaceRoot, workspaceRoot);
+async function migrateWorkspaceRootContents(sourceRoot, targetRoot) {
+  if (sourceRoot === targetRoot || !existsSync(sourceRoot)) {
+    return;
   }
 
-  if (legacyWorkspaceRoot !== workspaceRoot) {
-    userProjectsDb.migrateProjectPathPrefix(userId, legacyWorkspaceRoot, workspaceRoot);
+  await fs.mkdir(targetRoot, { recursive: true });
+
+  const entries = await fs.readdir(sourceRoot);
+  for (const entry of entries) {
+    const sourcePath = path.join(sourceRoot, entry);
+    const targetPath = path.join(targetRoot, entry);
+
+    if (existsSync(targetPath)) {
+      continue;
+    }
+
+    await fs.rename(sourcePath, targetPath);
+  }
+
+  const remainingEntries = await fs.readdir(sourceRoot);
+  if (remainingEntries.length === 0) {
+    await fs.rmdir(sourceRoot);
+  }
+}
+
+export async function ensureWorkspaceRootForUser(userId) {
+  const publicId = userDb.getPublicId(userId);
+  if (!publicId) {
+    throw new Error(`No public workspace identifier found for user ${String(userId ?? '').trim()}`);
+  }
+
+  const legacyWorkspaceRoot = getLegacyWorkspaceRootForUser(userId);
+  const deprecatedWorkspaceRoot = getDeprecatedWorkspaceRootForPublicId(publicId, WORKSPACES_ROOT);
+  const workspaceRoot = getWorkspaceRootForUser(userId);
+
+  for (const sourceRoot of [legacyWorkspaceRoot, deprecatedWorkspaceRoot]) {
+    if (sourceRoot === workspaceRoot) {
+      continue;
+    }
+
+    if (existsSync(sourceRoot)) {
+      await migrateWorkspaceRootContents(sourceRoot, workspaceRoot);
+      userProjectsDb.migrateProjectPathPrefix(userId, sourceRoot, workspaceRoot);
+    }
   }
 
   await fs.mkdir(workspaceRoot, { recursive: true });

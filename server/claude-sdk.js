@@ -30,6 +30,7 @@ import {
 import { claudeAdapter } from './providers/claude/adapter.js';
 import { createNormalizedMessage } from './providers/types.js';
 import {
+  getDeprecatedWorkspaceRootForPublicId,
   getConfiguredWorkspacesRoot,
   getLegacyWorkspaceRootForUserId,
   getWorkspaceRootForPublicId,
@@ -224,6 +225,9 @@ async function resolveClaudeWorkspacePath(requestedPath, userId = null, publicId
     const legacyRoot = userId != null
       ? getLegacyWorkspaceRootForUserId(userId, workspacesRoot)
       : null;
+    const deprecatedRoot = resolvedPublicId
+      ? getDeprecatedWorkspaceRootForPublicId(resolvedPublicId, workspacesRoot)
+      : null;
     const workspaceRoot = resolvedPublicId
       ? getWorkspaceRootForPublicId(resolvedPublicId, workspacesRoot)
       : null;
@@ -232,8 +236,8 @@ async function resolveClaudeWorkspacePath(requestedPath, userId = null, publicId
       await fs.mkdir(workspaceRoot, { recursive: true });
     }
 
-    if (legacyRoot && workspaceRoot) {
-      resolvedPath = normalizeLegacyWorkspacePath(resolvedPath, legacyRoot, workspaceRoot);
+    if (workspaceRoot && (legacyRoot || deprecatedRoot)) {
+      resolvedPath = normalizeLegacyWorkspacePath(resolvedPath, [legacyRoot, deprecatedRoot], workspaceRoot);
     }
 
     if (workspaceRoot && !existsSync(resolvedPath)) {

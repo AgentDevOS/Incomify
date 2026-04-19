@@ -29,22 +29,36 @@ export function getLegacyWorkspaceRootForUserId(userId, workspacesRoot = getConf
   return path.join(workspacesRoot, 'users', normalizedUserId, 'workspaces');
 }
 
+export function getDeprecatedWorkspaceRootForPublicId(publicId, workspacesRoot = getConfiguredWorkspacesRoot()) {
+  const normalizedPublicId = String(publicId ?? '').trim();
+  if (!normalizedPublicId) {
+    throw new Error('A valid public workspace identifier is required to resolve the deprecated workspace root');
+  }
+
+  return path.join(workspacesRoot, 'users', normalizedPublicId, 'workspaces');
+}
+
 export function getWorkspaceRootForPublicId(publicId, workspacesRoot = getConfiguredWorkspacesRoot()) {
   const normalizedPublicId = String(publicId ?? '').trim();
   if (!normalizedPublicId) {
     throw new Error('A valid public workspace identifier is required to resolve the workspace root');
   }
 
-  return path.join(workspacesRoot, 'users', normalizedPublicId, 'workspaces');
+  return path.join(workspacesRoot, 'users', normalizedPublicId);
 }
 
-export function normalizeLegacyWorkspacePath(projectPath, legacyRoot, workspaceRoot) {
-  if (!projectPath || typeof projectPath !== 'string' || !legacyRoot || !workspaceRoot || legacyRoot === workspaceRoot) {
+export function normalizeLegacyWorkspacePath(projectPath, legacyRoots, workspaceRoot) {
+  if (!projectPath || typeof projectPath !== 'string' || !workspaceRoot) {
     return projectPath;
   }
 
-  if (projectPath === legacyRoot || projectPath.startsWith(`${legacyRoot}${path.sep}`)) {
-    return path.join(workspaceRoot, projectPath.slice(legacyRoot.length).replace(/^[/\\]+/, ''));
+  const candidateRoots = (Array.isArray(legacyRoots) ? legacyRoots : [legacyRoots])
+    .filter((candidate) => typeof candidate === 'string' && candidate && candidate !== workspaceRoot);
+
+  for (const legacyRoot of candidateRoots) {
+    if (projectPath === legacyRoot || projectPath.startsWith(`${legacyRoot}${path.sep}`)) {
+      return path.join(workspaceRoot, projectPath.slice(legacyRoot.length).replace(/^[/\\]+/, ''));
+    }
   }
 
   return projectPath;
