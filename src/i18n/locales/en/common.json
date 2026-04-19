@@ -93,7 +93,11 @@
     "createProjectDesktop": "Create a new project by clicking the folder icon in the sidebar",
     "newSession": "New Session",
     "untitledSession": "Untitled Session",
-    "projectFiles": "Project Files"
+    "projectFiles": "Project Files",
+    "openPrototype": "Open Prototype",
+    "openingPrototype": "Opening...",
+    "prototypeNotAvailable": "Prototype is not available yet. Generate prototype/index.html or docs/index.html first.",
+    "prototypeOpenFailed": "Failed to open prototype"
   },
   "fileTree": {
     "loading": "Loading files...",

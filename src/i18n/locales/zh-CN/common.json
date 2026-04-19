@@ -93,7 +93,11 @@
     "createProjectDesktop": "点击侧边栏中的文件夹图标以创建新项目",
     "newSession": "新会话",
     "untitledSession": "未命名会话",
-    "projectFiles": "项目文件"
+    "projectFiles": "项目文件",
+    "openPrototype": "打开原型",
+    "openingPrototype": "打开中...",
+    "prototypeNotAvailable": "原型暂不可用，请先生成 prototype/index.html 或 docs/index.html。",
+    "prototypeOpenFailed": "打开原型失败"
   },
   "fileTree": {
     "loading": "正在加载文件...",

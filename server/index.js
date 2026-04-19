@@ -74,6 +74,7 @@ import {
     closeDeploymentWatchers,
     initializeDeploymentWatchers,
 } from './services/deployment-watcher.js';
+import { getDeployRoot } from './services/deployment.js';
 import { validateApiKey, authenticateToken, authenticateWebSocket } from './middleware/auth.js';
 import { IS_PLATFORM } from './constants/config.js';
 import { getConnectableHost } from '../shared/networkHosts.js';
@@ -420,6 +421,17 @@ app.use('/api/sessions', authenticateToken, messagesRoutes);
 
 // Agent API Routes (uses API key authentication)
 app.use('/api/agent', agentRoutes);
+
+// Serve deployed project artifacts, including generated prototypes.
+app.use('/aisoft/deploy', express.static(getDeployRoot(), {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
 
 // Serve public files (like api-docs.html)
 app.use(express.static(path.join(__dirname, '../public')));

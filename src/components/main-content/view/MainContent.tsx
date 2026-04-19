@@ -104,6 +104,7 @@ function MainContent({
         shouldShowTasksTab={shouldShowTasksTab}
         isMobile={isMobile}
         onMenuClick={onMenuClick}
+        showPrototypeEntry
       />
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
