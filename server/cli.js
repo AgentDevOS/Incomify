@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * Claude Code UI CLI
+ * Incomify CLI
  *
- * Provides command-line utilities for managing Claude Code UI
+ * Provides command-line utilities for managing Incomify
  *
  * Commands:
  *   (no args)     - Start the server (default)
@@ -84,7 +84,7 @@ function getInstallDir() {
 
 // Show status command
 function showStatus() {
-    console.log(`\n${c.bright('Claude Code UI - Status')}\n`);
+    console.log(`\n${c.bright('Incomify - Status')}\n`);
     console.log(c.dim('═'.repeat(60)));
 
     // Version info
@@ -141,7 +141,7 @@ function showStatus() {
 function showHelp() {
     console.log(`
 ╔═══════════════════════════════════════════════════════════════╗
-║              Claude Code UI - Command Line Tool               ║
+║              Incomify - Command Line Tool               ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 Usage:
@@ -149,7 +149,7 @@ Usage:
   cloudcli [command] [options]
 
 Commands:
-  start          Start the Claude Code UI server (default)
+  start          Start the Incomify server (default)
   status         Show configuration and data locations
   update         Update to the latest version
   help           Show this help information

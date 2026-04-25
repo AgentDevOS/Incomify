@@ -1,4 +1,4 @@
-// Service Worker for Claude Code UI PWA
+// Service Worker for Incomify PWA
 // Cache only manifest (needed for PWA install). HTML and JS are never pre-cached
 // so a rebuild + refresh always picks up the latest assets.
 const CACHE_NAME = 'claude-ui-v3';
@@ -80,7 +80,7 @@ self.addEventListener('push', event => {
   try {
     payload = event.data.json();
   } catch {
-    payload = { title: 'Claude Code UI', body: event.data.text() };
+    payload = { title: 'Incomify', body: event.data.text() };
   }
 
   const options = {
@@ -93,7 +93,7 @@ self.addEventListener('push', event => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'Claude Code UI', options)
+    self.registration.showNotification(payload.title || 'Incomify', options)
   );
 });
 
