@@ -11,7 +11,7 @@ interface UseChatProviderStateArgs {
 export function useChatProviderState({ selectedSession }: UseChatProviderStateArgs) {
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   const [pendingPermissionRequests, setPendingPermissionRequests] = useState<PendingPermissionRequest[]>([]);
-  const [provider, setProvider] = useState<SessionProvider>('claude');
+  const [provider, setProvider] = useState<SessionProvider>('codex');
   const [cursorModel, setCursorModel] = useState<string>(() => {
     return localStorage.getItem('cursor-model') || CURSOR_MODELS.DEFAULT;
   });
@@ -38,9 +38,9 @@ export function useChatProviderState({ selectedSession }: UseChatProviderStateAr
 
   useEffect(() => {
     if (!selectedSession?.__provider) {
-      if (provider !== 'claude') {
-        setProvider('claude');
-        localStorage.setItem('selected-provider', 'claude');
+      if (provider !== 'codex') {
+        setProvider('codex');
+        localStorage.setItem('selected-provider', 'codex');
       }
       return;
     }
