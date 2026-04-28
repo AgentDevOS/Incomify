@@ -554,7 +554,6 @@
 }
 
 /* Mobile optimizations and components */
-@layer components {
   /* Mobile touch optimization and safe areas */
   @media (max-width: 768px) {
     * {
@@ -587,26 +586,29 @@
     
     /* Better mobile touch targets */
     .mobile-touch-target {
-      @apply min-h-[44px] min-w-[44px];
+      min-height: 44px;
+      min-width: 44px;
     }
     
     /* Chat message improvements */
     .chat-message.user {
-      @apply justify-end;
+      justify-content: flex-end;
     }
     
     .chat-message.user > div {
-      @apply max-w-[85%];
+      max-width: 85%;
     }
     
     .chat-message.assistant > div,
     .chat-message.error > div {
-      @apply w-full sm:max-w-[95%];
+      width: 100%;
     }
     
     /* Session name truncation on mobile */
     .session-name-mobile {
-      @apply truncate;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
       max-width: calc(100vw - 120px); /* Account for sidebar padding and buttons */
     }
     
@@ -629,29 +631,37 @@
     }
     
     /* Fix hover states on mobile */
-    .group:active .group-hover\:opacity-100,
-    .group .group-hover\:opacity-100 {
+    .group:active [class~="group-hover:opacity-100"],
+    .group [class~="group-hover:opacity-100"] {
       opacity: 1 !important;
     }
     
-    @media (hover: none) and (pointer: coarse) {
-      .group-hover\:opacity-100 {
-        opacity: 1 !important;
-      }
-      
-      .hover\:bg-gray-50:hover,
-      .hover\:bg-gray-100:hover,
-      .hover\:bg-red-200:hover,
-      .dark\:hover\:bg-gray-700:hover,
-      .dark\:hover\:bg-red-900\/50:hover {
-        background-color: inherit;
-      }
+  }
+
+  @media (min-width: 640px) and (max-width: 768px) {
+    .chat-message.assistant > div,
+    .chat-message.error > div {
+      max-width: 95%;
+    }
+  }
+
+  @media (max-width: 768px) and (hover: none) and (pointer: coarse) {
+    [class~="group-hover:opacity-100"] {
+      opacity: 1 !important;
+    }
+
+    [class~="hover:bg-gray-50"]:hover,
+    [class~="hover:bg-gray-100"]:hover,
+    [class~="hover:bg-red-200"]:hover,
+    [class~="dark:hover:bg-gray-700"]:hover,
+    [class~="dark:hover:bg-red-900/50"]:hover {
+      background-color: inherit;
     }
   }
   
   /* Touch device optimizations for all screen sizes */
   @media (hover: none) and (pointer: coarse) {
-    .touch\:opacity-100 {
+    [class~="touch:opacity-100"] {
       opacity: 1 !important;
     }
     
@@ -671,10 +681,10 @@
     [role="button"]:hover,
     .cursor-pointer:hover,
     a:hover,
-    .hover\:bg-gray-50:hover,
-    .hover\:bg-gray-100:hover,
-    .hover\:text-gray-900:hover,
-    .hover\:opacity-100:hover {
+    [class~="hover:bg-gray-50"]:hover,
+    [class~="hover:bg-gray-100"]:hover,
+    [class~="hover:text-gray-900"]:hover,
+    [class~="hover:opacity-100"]:hover {
       background-color: inherit !important;
       color: inherit !important;
       opacity: inherit !important;
@@ -688,8 +698,8 @@
     }
     
     /* Keep active states for immediate feedback */
-    .active\:scale-\[0\.98\]:active,
-    .active\:scale-95:active {
+    [class~="active:scale-[0.98]"]:active,
+    [class~="active:scale-95"]:active {
       transform: scale(0.98) !important;
     }
   }
@@ -753,7 +763,6 @@
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
-}
 
 /* Hide markdown backticks in prose content */
 .prose code::before,

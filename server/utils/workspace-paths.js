@@ -11,13 +11,30 @@ const DEFAULT_WORKSPACES_ROOT_CANDIDATES = [
   'Code',
 ].map((dirName) => path.join(os.homedir(), dirName));
 
+export function expandHomePath(inputPath) {
+  const trimmedPath = String(inputPath ?? '').trim();
+  if (!trimmedPath) {
+    return trimmedPath;
+  }
+
+  if (trimmedPath === '~') {
+    return os.homedir();
+  }
+
+  if (trimmedPath.startsWith('~/') || trimmedPath.startsWith('~\\')) {
+    return path.join(os.homedir(), trimmedPath.slice(2));
+  }
+
+  return trimmedPath;
+}
+
 export function getDefaultWorkspacesRoot() {
   const existingCandidate = DEFAULT_WORKSPACES_ROOT_CANDIDATES.find((candidate) => existsSync(candidate));
   return existingCandidate || DEFAULT_WORKSPACES_ROOT_CANDIDATES[0];
 }
 
 export function getConfiguredWorkspacesRoot() {
-  return process.env.WORKSPACES_ROOT || getDefaultWorkspacesRoot();
+  return path.resolve(expandHomePath(process.env.WORKSPACES_ROOT || getDefaultWorkspacesRoot()));
 }
 
 export function getLegacyWorkspaceRootForUserId(userId, workspacesRoot = getConfiguredWorkspacesRoot()) {

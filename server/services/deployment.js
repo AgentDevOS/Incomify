@@ -1,6 +1,7 @@
 import path from 'path';
 import { promises as fs } from 'fs';
 import { userDb } from '../database/db.js';
+import { expandHomePath } from '../utils/workspace-paths.js';
 
 export const DEPLOYABLE_ARTIFACT_TYPES = ['android', 'ios', 'mini-program', 'prototype', 'web'];
 const ARTIFACT_SOURCE_PATH_ALLOWLIST = {
@@ -8,7 +9,7 @@ const ARTIFACT_SOURCE_PATH_ALLOWLIST = {
   web: new Set(['dist']),
 };
 
-const DEFAULT_DEPLOY_ROOT = '/Users/steven/workspace/deploy';
+const DEFAULT_DEPLOY_ROOT = '~/workspace/deploy';
 
 function normalizeIdentifier(value, label) {
   const normalized = String(value ?? '').trim();
@@ -74,7 +75,7 @@ async function resolveProjectScopedSourcePath(projectPath, sourcePath) {
 }
 
 export function getDeployRoot() {
-  return path.resolve(process.env.DEPLOY_ROOT || DEFAULT_DEPLOY_ROOT);
+  return path.resolve(expandHomePath(process.env.DEPLOY_ROOT || DEFAULT_DEPLOY_ROOT));
 }
 
 export function getDeployBaseUrl() {
