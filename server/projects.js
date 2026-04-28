@@ -73,6 +73,7 @@ import {
   registerProjectDeploymentWatcher,
   unregisterProjectDeploymentWatcher,
 } from './services/deployment-watcher.js';
+import { extractCodexTokenUsageFromInfo } from './codex-token-usage.js';
 
 function isClaudeMetaEntry(entry) {
   return entry?.isMeta === true;
@@ -1923,13 +1924,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
           // Extract token usage from token_count events (keep latest)
           if (entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload?.info) {
-            const info = entry.payload.info;
-            if (info.total_token_usage) {
-              tokenUsage = {
-                used: info.total_token_usage.total_tokens || 0,
-                total: info.model_context_window || 200000
-              };
-            }
+            tokenUsage = extractCodexTokenUsageFromInfo(entry.payload.info);
           }
           
           // Use event_msg.user_message for user-visible inputs.

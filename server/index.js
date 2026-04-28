@@ -67,6 +67,7 @@ import geminiRoutes from './routes/gemini.js';
 import pluginsRoutes from './routes/plugins.js';
 import messagesRoutes from './routes/messages.js';
 import { createNormalizedMessage } from './providers/types.js';
+import { extractCodexTokenUsageFromInfo } from './codex-token-usage.js';
 import { startEnabledPluginServers, stopAllPlugins, getPluginPort } from './utils/plugin-process-manager.js';
 import { initializeDatabase, sessionNamesDb, applyCustomSessionNames } from './database/db.js';
 import { configureWebPush } from './services/vapid-keys.js';
@@ -2355,8 +2356,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
                 throw error;
             }
             const lines = fileContent.trim().split('\n');
-            let totalTokens = 0;
-            let contextWindow = 200000; // Default for Codex/OpenAI
+            let tokenUsage = { used: 0, total: 200000 };
 
             // Find the latest token_count event with info (scan from end)
             for (let i = lines.length - 1; i >= 0; i--) {
@@ -2365,13 +2365,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
 
                     // Codex stores token info in event_msg with type: "token_count"
                     if (entry.type === 'event_msg' && entry.payload?.type === 'token_count' && entry.payload?.info) {
-                        const tokenInfo = entry.payload.info;
-                        if (tokenInfo.total_token_usage) {
-                            totalTokens = tokenInfo.total_token_usage.total_tokens || 0;
-                        }
-                        if (tokenInfo.model_context_window) {
-                            contextWindow = tokenInfo.model_context_window;
-                        }
+                        tokenUsage = extractCodexTokenUsageFromInfo(entry.payload.info) || tokenUsage;
                         break; // Stop after finding the latest token count
                     }
                 } catch (parseError) {
@@ -2380,10 +2374,7 @@ app.get('/api/projects/:projectName/sessions/:sessionId/token-usage', authentica
                 }
             }
 
-            return res.json({
-                used: totalTokens,
-                total: contextWindow
-            });
+            return res.json(tokenUsage);
         }
 
         // Handle Claude sessions (default)

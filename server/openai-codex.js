@@ -18,7 +18,8 @@ import { notifyRunFailed, notifyRunStopped } from './services/notification-orche
 import { codexAdapter } from './providers/codex/adapter.js';
 import { createNormalizedMessage } from './providers/types.js';
 import { getCodexEventThreadId } from './codex-event-utils.js';
-import { getCodexSessions } from './projects.js';
+import { extractCodexTokenUsageFromTurnUsage } from './codex-token-usage.js';
+import { getCodexSessionMessages, getCodexSessions } from './projects.js';
 import { resolveCodexThreadStart } from './codex-session-resolution.js';
 
 // Track active sessions
@@ -403,8 +404,18 @@ export async function queryCodex(command, options = {}, ws) {
 
       // Extract and send token usage if available (normalized to match Claude format)
       if (event.type === 'turn.completed' && event.usage) {
-        const totalTokens = (event.usage.input_tokens || 0) + (event.usage.output_tokens || 0);
-        sendMessage(ws, createNormalizedMessage({ kind: 'status', text: 'token_budget', tokenBudget: { used: totalTokens, total: 200000 }, sessionId: currentSessionId, provider: 'codex' }));
+        let tokenUsage = null;
+        if (currentSessionId) {
+          try {
+            tokenUsage = (await getCodexSessionMessages(currentSessionId, 0, 0))?.tokenUsage || null;
+          } catch (error) {
+            console.warn('[Codex] Failed to read persisted token usage:', error?.message || error);
+          }
+        }
+        tokenUsage = tokenUsage || extractCodexTokenUsageFromTurnUsage(event.usage);
+        if (tokenUsage) {
+          sendMessage(ws, createNormalizedMessage({ kind: 'status', text: 'token_budget', tokenBudget: tokenUsage, sessionId: currentSessionId, provider: 'codex' }));
+        }
       }
     }
 

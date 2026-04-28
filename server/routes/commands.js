@@ -220,7 +220,7 @@ Custom commands can be created in:
           ? CODEX_MODELS.DEFAULT
           : CLAUDE_MODELS.DEFAULT);
 
-    const used = Number(tokenUsage.used ?? tokenUsage.totalUsed ?? tokenUsage.total_tokens ?? 0) || 0;
+    const used = Number(tokenUsage.totalUsed ?? tokenUsage.used ?? tokenUsage.total_tokens ?? 0) || 0;
     const total =
       Number(
         tokenUsage.total ??
