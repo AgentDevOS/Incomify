@@ -24,6 +24,7 @@
   },
   "scripts": {
     "dev": "concurrently --kill-others \"npm run server\" \"npm run client\"",
+    "dev:restart": "./scripts/dev-restart.sh",
     "dev:aisoft-ui": "./scripts/start-aisoft-ui.sh",
     "server": "node server/index.js",
     "client": "vite",

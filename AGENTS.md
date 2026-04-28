@@ -6,6 +6,7 @@
 ## 构建、测试与开发命令
 - `npm install`：安装依赖，要求 Node.js 22+。
 - `npm run dev`：同时启动后端和 Vite 开发服务器。
+- `npm run dev:restart`：先杀掉占用目标后端端口和 Vite 端口的旧进程，再启动开发服务器；调试本仓库时优先用这个命令，避免旧进程继续接管 WebSocket 或 API。端口来源依次参考当前环境变量、`.env`、默认值；可用 `KILL_PORTS="3022 5176" npm run dev:restart` 额外清理临时端口。
 - `npm run client`：仅启动前端。
 - `npm run server`：仅启动后端。
 - `npm run lint`：检查 `src/**/*.{ts,tsx,js,jsx}`。
