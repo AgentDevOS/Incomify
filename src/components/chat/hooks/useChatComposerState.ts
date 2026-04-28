@@ -21,6 +21,11 @@ import type {
 } from '../types/types';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
 import { escapeRegExp } from '../utils/chatFormatting';
+import {
+  getSessionIdFromPathname,
+  isTemporarySessionId,
+  resolveComposerSessionId,
+} from '../utils/sessionResolution';
 import { useFileMentions } from './useFileMentions';
 import { type SlashCommand, useSlashCommands } from './useSlashCommands';
 
@@ -80,81 +85,14 @@ const createFakeSubmitEvent = () => {
   return { preventDefault: () => undefined } as unknown as FormEvent<HTMLFormElement>;
 };
 
-const isTemporarySessionId = (sessionId: string | null | undefined) =>
-  Boolean(sessionId && sessionId.startsWith('new-session-'));
-
 const getPendingSessionId = () =>
   typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
 
 const getCursorSessionId = () =>
   typeof window !== 'undefined' ? sessionStorage.getItem('cursorSessionId') : null;
 
-const isSessionRoutePath = () =>
-  typeof window !== 'undefined' && /\/session\/[^/]+$/.test(window.location.pathname);
-
-function resolveComposerSessionId({
-  selectedSession,
-  currentSessionId,
-  pendingViewSessionId,
-  provider,
-}: {
-  selectedSession: ProjectSession | null;
-  currentSessionId: string | null;
-  pendingViewSessionId: string | null;
-  provider: SessionProvider;
-}): string | null {
-  const isSessionRoute = isSessionRoutePath();
-
-  if (!isSessionRoute) {
-    const pendingSessionId = getPendingSessionId();
-
-    if (isTemporarySessionId(currentSessionId)) {
-      return currentSessionId;
-    }
-
-    if (pendingViewSessionId) {
-      return pendingViewSessionId;
-    }
-
-    if (pendingSessionId) {
-      return pendingSessionId;
-    }
-
-    return null;
-  }
-
-  if (selectedSession?.id) {
-    return selectedSession.id;
-  }
-
-  const pendingSessionId = getPendingSessionId();
-
-  // On the blank "new session" view, ignore stale concrete IDs from the previously opened session.
-  if (
-    currentSessionId &&
-    (
-      isTemporarySessionId(currentSessionId) ||
-      currentSessionId === pendingViewSessionId ||
-      currentSessionId === pendingSessionId
-    )
-  ) {
-    return currentSessionId;
-  }
-
-  if (pendingViewSessionId) {
-    return pendingViewSessionId;
-  }
-
-  if (pendingSessionId) {
-    return pendingSessionId;
-  }
-
-  if (provider === 'cursor') {
-    return getCursorSessionId();
-  }
-
-  return null;
-}
+const getRouteSessionId = () =>
+  typeof window !== 'undefined' ? getSessionIdFromPathname(window.location.pathname) : null;
 
 const getNotificationSessionSummary = (
   selectedSession: ProjectSession | null,
@@ -356,6 +294,9 @@ export function useChatComposerState({
             selectedSession,
             currentSessionId,
             pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+            pendingSessionId: getPendingSessionId(),
+            cursorSessionId: getCursorSessionId(),
+            routeSessionId: getRouteSessionId(),
             provider,
           }),
           provider,
@@ -607,13 +548,33 @@ export function useChatComposerState({
         }
       }
 
+      const pendingViewSessionId = pendingViewSessionRef.current?.sessionId || null;
+      const pendingSessionId = getPendingSessionId();
+      const cursorSessionId = getCursorSessionId();
+      const routeSessionId = getRouteSessionId();
       const effectiveSessionId = resolveComposerSessionId({
         selectedSession,
         currentSessionId,
-        pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+        pendingViewSessionId,
+        pendingSessionId,
+        cursorSessionId,
+        routeSessionId,
         provider,
       });
       const sessionToActivate = effectiveSessionId || `new-session-${Date.now()}`;
+      const sessionResolutionSource = selectedSession?.id === effectiveSessionId
+        ? 'selectedSession'
+        : routeSessionId === effectiveSessionId
+          ? 'route'
+          : pendingViewSessionId === effectiveSessionId
+            ? 'pendingView'
+            : pendingSessionId === effectiveSessionId
+              ? 'pendingStorage'
+              : cursorSessionId === effectiveSessionId
+                ? 'cursorStorage'
+                : isTemporarySessionId(currentSessionId) && currentSessionId === effectiveSessionId
+                  ? 'temporaryCurrent'
+                  : 'new';
 
       console.log('[SessionDebug][Composer] submit', {
         provider,
@@ -621,10 +582,12 @@ export function useChatComposerState({
         selectedProject: selectedProject.name,
         selectedSessionId: selectedSession?.id ?? null,
         currentSessionId,
-        pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
-        pendingSessionId: getPendingSessionId(),
-        cursorSessionId: getCursorSessionId(),
+        pendingViewSessionId,
+        pendingSessionId,
+        cursorSessionId,
+        routeSessionId,
         effectiveSessionId,
+        sessionResolutionSource,
         sessionToActivate,
         resume: Boolean(effectiveSessionId),
         inputPreview: currentInput.slice(0, 120),
@@ -951,10 +914,14 @@ export function useChatComposerState({
 
     const pendingSessionId = getPendingSessionId();
     const cursorSessionId = getCursorSessionId();
+    const routeSessionId = getRouteSessionId();
     const resolvedSessionId = resolveComposerSessionId({
       selectedSession,
       currentSessionId,
       pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+      pendingSessionId,
+      cursorSessionId,
+      routeSessionId,
       provider,
     });
 
@@ -962,6 +929,7 @@ export function useChatComposerState({
       resolvedSessionId,
       pendingViewSessionRef.current?.sessionId || null,
       pendingSessionId,
+      routeSessionId,
       provider === 'cursor' ? cursorSessionId : null,
       selectedSession?.id || null,
     ];

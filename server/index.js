@@ -1471,6 +1471,28 @@ wss.on('connection', (ws, request) => {
  * adapter `normalizeMessage()` to produce unified NormalizedMessage events.
  * The writer simply serialises and sends.
  */
+const DEBUG_WS_MESSAGE_PREVIEWS =
+    process.env.SESSION_DEBUG_WS === 'true' || process.env.DUP_DEBUG === 'true';
+
+function summarizeOutgoingMessage(data) {
+    const content = typeof data?.content === 'string'
+        ? data.content
+        : typeof data?.text === 'string'
+            ? data.text
+            : '';
+
+    return {
+        type: data?.type ?? null,
+        kind: data?.kind ?? null,
+        id: data?.id ?? null,
+        sessionId: data?.sessionId ?? data?.session_id ?? null,
+        provider: data?.provider ?? null,
+        role: data?.role ?? null,
+        contentLength: content.length,
+        preview: content.trim().replace(/\s+/g, ' ').slice(0, 120),
+    };
+}
+
 class WebSocketWriter {
     constructor(ws, userId = null) {
         this.ws = ws;
@@ -1482,6 +1504,9 @@ class WebSocketWriter {
 
     send(data) {
         if (this.ws.readyState === 1) { // WebSocket.OPEN
+            if (DEBUG_WS_MESSAGE_PREVIEWS && (data?.kind || data?.type)) {
+                console.log('[DupDebug][Server][Writer] send', summarizeOutgoingMessage(data));
+            }
             this.ws.send(JSON.stringify(data));
         }
     }

@@ -17,16 +17,47 @@ import { Codex } from '@openai/codex-sdk';
 import { notifyRunFailed, notifyRunStopped } from './services/notification-orchestrator.js';
 import { codexAdapter } from './providers/codex/adapter.js';
 import { createNormalizedMessage } from './providers/types.js';
+import { getCodexEventThreadId } from './codex-event-utils.js';
+import { getCodexSessions } from './projects.js';
+import { resolveCodexThreadStart } from './codex-session-resolution.js';
 
 // Track active sessions
 const activeCodexSessions = new Map();
+
+function normalizeComparableText(value) {
+  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+}
+
+function shouldSkipDuplicateAssistantText(message, sentAssistantText) {
+  if (message.kind !== 'text' || message.role !== 'assistant') {
+    return false;
+  }
+
+  const contentKey = normalizeComparableText(message.content);
+  if (!contentKey) {
+    return false;
+  }
+
+  if (sentAssistantText.has(contentKey)) {
+    console.warn('[DupDebug][Server][Codex] skip duplicate assistant text', {
+      id: message.id,
+      sessionId: message.sessionId,
+      contentLength: message.content.length,
+      preview: contentKey.slice(0, 120),
+    });
+    return true;
+  }
+
+  sentAssistantText.add(contentKey);
+  return false;
+}
 
 /**
  * Transform Codex SDK event to WebSocket message format
  * @param {object} event - SDK event
  * @returns {object} - Transformed event for WebSocket
  */
-function transformCodexEvent(event) {
+export function transformCodexEvent(event) {
   // Map SDK event types to a consistent format
   switch (event.type) {
     case 'item.started':
@@ -142,7 +173,7 @@ function transformCodexEvent(event) {
     case 'thread.started':
       return {
         type: 'thread_started',
-        threadId: event.id
+        threadId: getCodexEventThreadId(event)
       };
 
     case 'error':
@@ -203,14 +234,39 @@ export async function queryCodex(command, options = {}, ws) {
 
   const workingDirectory = cwd || projectPath || process.cwd();
   const { sandboxMode, approvalPolicy } = mapPermissionModeToCodexOptions(permissionMode);
+  const requestedSessionId = sessionId || null;
 
   let codex;
   let thread;
   let currentSessionId = sessionId;
   let terminalFailure = null;
   const abortController = new AbortController();
+  const sentAssistantText = new Set();
 
   try {
+    let sessionExists = false;
+    if (requestedSessionId) {
+      if (activeCodexSessions.has(requestedSessionId)) {
+        sessionExists = true;
+      } else {
+        const projectSessions = await getCodexSessions(workingDirectory, { limit: 0 });
+        sessionExists = projectSessions.some((session) => session.id === requestedSessionId);
+      }
+    }
+
+    const threadStart = resolveCodexThreadStart({
+      requestedSessionId,
+      sessionExists,
+    });
+    const resumeSessionId = threadStart.resumeSessionId;
+
+    if (threadStart.staleRequestedSessionId) {
+      console.warn('[SessionDebug][Server][Codex] requested resume session is missing; starting new thread', {
+        requestedSessionId: threadStart.staleRequestedSessionId,
+        workingDirectory,
+      });
+    }
+
     // Initialize Codex SDK
     codex = new Codex();
 
@@ -223,27 +279,66 @@ export async function queryCodex(command, options = {}, ws) {
       model
     };
 
+    console.log('[SessionDebug][Server][Codex] start query', {
+      requestedSessionId,
+      action: threadStart.action,
+      workingDirectory,
+      model,
+      sandboxMode,
+      approvalPolicy,
+      commandPreview: typeof command === 'string' ? command.slice(0, 120) : null,
+    });
+
     // Start or resume thread
-    if (sessionId) {
-      thread = codex.resumeThread(sessionId, threadOptions);
+    if (resumeSessionId) {
+      thread = codex.resumeThread(resumeSessionId, threadOptions);
     } else {
       thread = codex.startThread(threadOptions);
     }
 
-    // Get the thread ID
-    currentSessionId = thread.id || sessionId || `codex-${Date.now()}`;
+    // For new threads the SDK only exposes the real ID after the first thread.started event.
+    currentSessionId = thread.id || resumeSessionId || null;
+    console.log('[SessionDebug][Server][Codex] thread ready', {
+      requestedSessionId,
+      sdkThreadId: thread.id || null,
+      currentSessionId,
+      action: threadStart.action,
+      idChanged: Boolean(resumeSessionId && currentSessionId !== resumeSessionId),
+    });
+    if (resumeSessionId && currentSessionId !== resumeSessionId) {
+      console.warn('[SessionDebug][Server][Codex] resume returned different thread id', {
+        requestedSessionId: resumeSessionId,
+        currentSessionId,
+      });
+    }
 
-    // Track the session
-    activeCodexSessions.set(currentSessionId, {
+    const sessionRecord = {
       thread,
       codex,
       status: 'running',
       abortController,
       startedAt: new Date().toISOString()
-    });
+    };
+    let sessionCreatedSent = false;
 
-    // Send session created event
-    sendMessage(ws, createNormalizedMessage({ kind: 'session_created', newSessionId: currentSessionId, sessionId: currentSessionId, provider: 'codex' }));
+    const sendSessionCreated = () => {
+      if (sessionCreatedSent || !currentSessionId) {
+        return;
+      }
+
+      sessionCreatedSent = true;
+      sendMessage(ws, createNormalizedMessage({
+        kind: 'session_created',
+        newSessionId: currentSessionId,
+        requestedSessionId,
+        sessionId: currentSessionId,
+        provider: 'codex'
+      }));
+    };
+
+    if (currentSessionId) {
+      activeCodexSessions.set(currentSessionId, sessionRecord);
+    }
 
     // Execute with streaming
     const streamedTurn = await thread.runStreamed(command, {
@@ -251,6 +346,29 @@ export async function queryCodex(command, options = {}, ws) {
     });
 
     for await (const event of streamedTurn.events) {
+      if (event.type === 'thread.started') {
+        const actualThreadId = getCodexEventThreadId(event);
+        if (actualThreadId && actualThreadId !== currentSessionId) {
+          if (currentSessionId) {
+            activeCodexSessions.delete(currentSessionId);
+          }
+          currentSessionId = actualThreadId;
+          activeCodexSessions.set(currentSessionId, sessionRecord);
+        } else if (actualThreadId && !activeCodexSessions.has(actualThreadId)) {
+          currentSessionId = actualThreadId;
+          activeCodexSessions.set(currentSessionId, sessionRecord);
+        }
+
+        sendSessionCreated();
+        continue;
+      }
+
+      if (!currentSessionId) {
+        currentSessionId = thread.id || resumeSessionId || `codex-${Date.now()}`;
+        activeCodexSessions.set(currentSessionId, sessionRecord);
+        sendSessionCreated();
+      }
+
       // Check if session was aborted
       const session = activeCodexSessions.get(currentSessionId);
       if (!session || session.status === 'aborted') {
@@ -266,6 +384,9 @@ export async function queryCodex(command, options = {}, ws) {
       // Normalize the transformed event into NormalizedMessage(s) via adapter
       const normalizedMsgs = codexAdapter.normalizeMessage(transformed, currentSessionId);
       for (const msg of normalizedMsgs) {
+        if (shouldSkipDuplicateAssistantText(msg, sentAssistantText)) {
+          continue;
+        }
         sendMessage(ws, msg);
       }
 
@@ -290,6 +411,12 @@ export async function queryCodex(command, options = {}, ws) {
     // Send completion event
     if (!terminalFailure) {
       sendMessage(ws, createNormalizedMessage({ kind: 'complete', actualSessionId: thread.id, sessionId: currentSessionId, provider: 'codex' }));
+      console.log('[SessionDebug][Server][Codex] complete', {
+        requestedSessionId,
+        sdkThreadId: thread.id || null,
+        currentSessionId,
+        action: threadStart.action,
+      });
       notifyRunStopped({
         userId: ws?.userId || null,
         provider: 'codex',

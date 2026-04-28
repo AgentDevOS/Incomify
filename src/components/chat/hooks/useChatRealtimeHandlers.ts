@@ -32,6 +32,25 @@ function persistLatestProjectSession(projectName: string, sessionId: string) {
   }
 }
 
+function summarizeRealtimeMessage(msg: LatestChatMessage) {
+  const content = typeof msg.content === 'string'
+    ? msg.content
+    : typeof msg.text === 'string'
+      ? msg.text
+      : '';
+
+  return {
+    type: msg.type ?? null,
+    kind: msg.kind ?? null,
+    id: msg.id ?? null,
+    sessionId: msg.sessionId ?? msg.session_id ?? null,
+    provider: msg.provider ?? null,
+    role: msg.role ?? null,
+    contentLength: content.length,
+    preview: content.trim().replace(/\s+/g, ' ').slice(0, 120),
+  };
+}
+
 type LatestChatMessage = {
   type?: string;
   kind?: string;
@@ -202,6 +221,14 @@ export function useChatRealtimeHandlers({
     /* ---------------------------------------------------------------- */
 
     const sid = msg.sessionId || activeViewSessionId;
+    console.log('[DupDebug][Client][Realtime] handle normalized', {
+      sid,
+      activeViewSessionId,
+      selectedSessionId: selectedSession?.id ?? null,
+      currentSessionId,
+      message: summarizeRealtimeMessage(msg),
+      accumulatedStreamLength: accumulatedStreamRef.current.length,
+    });
 
     // --- Streaming: buffer for performance ---
     if (msg.kind === 'stream_delta') {
@@ -225,6 +252,10 @@ export function useChatRealtimeHandlers({
     }
 
     if (msg.kind === 'stream_end') {
+      console.log('[DupDebug][Client][Realtime] stream_end', {
+        sid,
+        accumulatedStreamLength: accumulatedStreamRef.current.length,
+      });
       if (streamTimerRef.current) {
         clearTimeout(streamTimerRef.current);
         streamTimerRef.current = null;
@@ -253,6 +284,7 @@ export function useChatRealtimeHandlers({
 
         console.log('[SessionDebug][Realtime] session_created', {
           newSessionId,
+          requestedSessionId: msg.requestedSessionId ?? null,
           currentPath: typeof window !== 'undefined' ? window.location.pathname : null,
           selectedProject: selectedProject?.name ?? null,
           selectedSessionId: selectedSession?.id ?? null,
@@ -292,6 +324,11 @@ export function useChatRealtimeHandlers({
           currentPath: typeof window !== 'undefined' ? window.location.pathname : null,
           currentSessionId,
           pendingSessionId: typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null,
+        });
+        console.log('[DupDebug][Client][Realtime] complete', {
+          sid,
+          accumulatedStreamLength: accumulatedStreamRef.current.length,
+          message: summarizeRealtimeMessage(msg),
         });
         // Flush any remaining streaming state
         if (streamTimerRef.current) {

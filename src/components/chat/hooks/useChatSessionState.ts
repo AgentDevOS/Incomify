@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { authenticatedFetch } from '../../../utils/api';
+import type { SessionStore, NormalizedMessage } from '../../../stores/useSessionStore';
 import type { ChatMessage, Provider } from '../types/types';
 import type { Project, ProjectSession, SessionProvider } from '../../../types/app';
 import { createCachedDiffCalculator, type DiffCalculator } from '../utils/messageTransforms';
+import {
+  getSessionIdFromPathname,
+  resolveActiveViewSessionId,
+} from '../utils/sessionResolution';
 import { normalizedToChatMessages } from './useChatMessages';
-import type { SessionStore, NormalizedMessage } from '../../../stores/useSessionStore';
 
 const MESSAGES_PER_PAGE = 20;
 const INITIAL_VISIBLE_MESSAGES = 100;
@@ -15,51 +19,8 @@ type PendingViewSession = {
   startedAt: number;
 };
 
-const isTemporarySessionId = (sessionId: string | null | undefined) =>
-  Boolean(sessionId && sessionId.startsWith('new-session-'));
-
 const getPendingSessionId = () =>
   typeof window !== 'undefined' ? sessionStorage.getItem('pendingSessionId') : null;
-
-const isSessionRoutePath = () =>
-  typeof window !== 'undefined' && /\/session\/[^/]+$/.test(window.location.pathname);
-
-function resolveActiveViewSessionId(
-  selectedSession: ProjectSession | null,
-  currentSessionId: string | null,
-  pendingViewSessionId: string | null,
-) {
-  const isSessionRoute = isSessionRoutePath();
-
-  if (!isSessionRoute) {
-    const pendingSessionId = getPendingSessionId();
-
-    if (isTemporarySessionId(currentSessionId)) {
-      return currentSessionId;
-    }
-
-    return pendingViewSessionId || pendingSessionId || null;
-  }
-
-  if (selectedSession?.id) {
-    return selectedSession.id;
-  }
-
-  const pendingSessionId = getPendingSessionId();
-
-  if (
-    currentSessionId &&
-    (
-      isTemporarySessionId(currentSessionId) ||
-      currentSessionId === pendingViewSessionId ||
-      currentSessionId === pendingSessionId
-    )
-  ) {
-    return currentSessionId;
-  }
-
-  return pendingViewSessionId || pendingSessionId || null;
-}
 
 interface UseChatSessionStateArgs {
   selectedProject: Project | null;
@@ -186,11 +147,13 @@ export function useChatSessionState({
   /*  Derive chatMessages from the store                              */
   /* ---------------------------------------------------------------- */
 
-  const activeSessionId = resolveActiveViewSessionId(
+  const activeSessionId = resolveActiveViewSessionId({
     selectedSession,
     currentSessionId,
-    pendingViewSessionRef.current?.sessionId || null,
-  );
+    pendingViewSessionId: pendingViewSessionRef.current?.sessionId || null,
+    pendingSessionId: getPendingSessionId(),
+    routeSessionId: typeof window !== 'undefined' ? getSessionIdFromPathname(window.location.pathname) : null,
+  });
   const resolvedProvider = selectedSession?.__provider || provider;
   const [pendingUserMessage, setPendingUserMessage] = useState<ChatMessage | null>(null);
 

@@ -26,6 +26,25 @@ const buildWebSocketUrl = (token: string | null) => {
   return `${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`; // OSS mode: Use same host:port that served the page
 };
 
+function summarizeSocketMessage(data: any) {
+  const content = typeof data?.content === 'string'
+    ? data.content
+    : typeof data?.text === 'string'
+      ? data.text
+      : '';
+
+  return {
+    type: data?.type ?? null,
+    kind: data?.kind ?? null,
+    id: data?.id ?? null,
+    sessionId: data?.sessionId ?? data?.session_id ?? null,
+    provider: data?.provider ?? null,
+    role: data?.role ?? null,
+    contentLength: content.length,
+    preview: content.trim().replace(/\s+/g, ' ').slice(0, 120),
+  };
+}
+
 const useWebSocketProviderState = (): WebSocketContextType => {
   const wsRef = useRef<WebSocket | null>(null);
   const unmountedRef = useRef(false); // Track if component is unmounted
@@ -81,6 +100,9 @@ const useWebSocketProviderState = (): WebSocketContextType => {
       websocket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          if (data?.kind || data?.type) {
+            console.log('[DupDebug][Client][WebSocket] recv', summarizeSocketMessage(data));
+          }
           setLatestMessage(data);
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);

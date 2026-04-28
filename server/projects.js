@@ -1912,6 +1912,10 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
         .join('\n');
     };
 
+    const normalizeComparableText = (value) => (
+      typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : ''
+    );
+
     for await (const line of rl) {
       if (line.trim()) {
         try {
@@ -2074,14 +2078,48 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
 
     // Sort by timestamp
     messages.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+    const dedupedMessages = [];
+    let lastAssistantText = '';
+    let lastAssistantTimestamp = 0;
 
-    const total = messages.length;
+    for (const message of messages) {
+      const assistantText = message.message?.role === 'assistant'
+        ? normalizeComparableText(message.message.content)
+        : '';
+      const timestampMs = Date.parse(message.timestamp || '');
+
+      if (
+        assistantText &&
+        assistantText === lastAssistantText &&
+        Number.isFinite(timestampMs) &&
+        Number.isFinite(lastAssistantTimestamp) &&
+        Math.abs(timestampMs - lastAssistantTimestamp) <= 5_000
+      ) {
+        console.warn('[DupDebug][Server][CodexHistory] skip duplicate assistant text', {
+          sessionId,
+          contentLength: String(message.message.content || '').length,
+          preview: assistantText.slice(0, 120),
+        });
+        continue;
+      }
+
+      dedupedMessages.push(message);
+      if (assistantText) {
+        lastAssistantText = assistantText;
+        lastAssistantTimestamp = Number.isFinite(timestampMs) ? timestampMs : 0;
+      } else if (message.message?.role === 'user') {
+        lastAssistantText = '';
+        lastAssistantTimestamp = 0;
+      }
+    }
+
+    const total = dedupedMessages.length;
 
     // Apply pagination if limit is specified
     if (limit !== null) {
       const startIndex = Math.max(0, total - offset - limit);
       const endIndex = total - offset;
-      const paginatedMessages = messages.slice(startIndex, endIndex);
+      const paginatedMessages = dedupedMessages.slice(startIndex, endIndex);
       const hasMore = startIndex > 0;
 
       return {
@@ -2094,7 +2132,7 @@ async function getCodexSessionMessages(sessionId, limit = null, offset = 0) {
       };
     }
 
-    return { messages, tokenUsage };
+    return { messages: dedupedMessages, tokenUsage };
 
   } catch (error) {
     console.error(`Error reading Codex session messages for ${sessionId}:`, error);
