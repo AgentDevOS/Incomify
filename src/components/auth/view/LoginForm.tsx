@@ -7,13 +7,16 @@ import AuthInputField from './AuthInputField';
 import AuthScreenLayout from './AuthScreenLayout';
 
 type LoginFormState = {
-  username: string;
+  email: string;
   password: string;
 };
 
 const initialState: LoginFormState = {
-  username: '',
+  email: '',
   password: '',
+};
+type LoginFormProps = {
+  onShowRegister?: () => void;
 };
 
 /**
@@ -21,7 +24,7 @@ const initialState: LoginFormState = {
  * Handles credential input with browser autofill support (`autocomplete`
  * attributes) so that password managers can offer to fill saved credentials.
  */
-export default function LoginForm() {
+export default function LoginForm({ onShowRegister }: LoginFormProps) {
   const { t } = useTranslation('auth');
   const { login } = useAuth();
 
@@ -39,35 +42,36 @@ export default function LoginForm() {
       setErrorMessage('');
 
       // Keep form validation local so each auth screen owns its own UI feedback.
-      if (!formState.username.trim() || !formState.password) {
+      if (!formState.email.trim() || !formState.password) {
         setErrorMessage(t('login.errors.requiredFields'));
         return;
       }
 
       setIsSubmitting(true);
-      const result = await login(formState.username.trim(), formState.password);
+      const result = await login(formState.email.trim(), formState.password);
       if (!result.success) {
         setErrorMessage(result.error);
       }
       setIsSubmitting(false);
     },
-    [formState.password, formState.username, login, t],
+    [formState.email, formState.password, login, t],
   );
 
   return (
     <AuthScreenLayout
       title={t('login.title')}
       description={t('login.description')}
-      footerText="Enter your credentials to access Incomify"
+      footerText={t('login.footer')}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <AuthInputField
-          id="username"
-          label={t('login.username')}
-          value={formState.username}
-          onChange={(value) => updateField('username', value)}
-          placeholder={t('login.placeholders.username')}
+          id="email"
+          label={t('login.email')}
+          value={formState.email}
+          onChange={(value) => updateField('email', value)}
+          placeholder={t('login.placeholders.email')}
           isDisabled={isSubmitting}
+          type="email"
           autoComplete="username"
         />
 
@@ -92,6 +96,16 @@ export default function LoginForm() {
           {isSubmitting ? t('login.loading') : t('login.submit')}
         </button>
       </form>
+
+      {onShowRegister ? (
+        <button
+          type="button"
+          onClick={onShowRegister}
+          className="mt-4 w-full text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+        >
+          {t('login.createAccount')}
+        </button>
+      ) : null}
     </AuthScreenLayout>
   );
 }

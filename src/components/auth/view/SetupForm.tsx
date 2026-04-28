@@ -1,42 +1,50 @@
 import { useCallback, useState } from 'react';
 import type { FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import AuthErrorAlert from './AuthErrorAlert';
 import AuthInputField from './AuthInputField';
 import AuthScreenLayout from './AuthScreenLayout';
 
 type SetupFormState = {
-  username: string;
+  email: string;
   password: string;
   confirmPassword: string;
+  inviteCode: string;
 };
 
 const initialState: SetupFormState = {
-  username: '',
+  email: '',
   password: '',
   confirmPassword: '',
+  inviteCode: '',
 };
+type SetupFormProps = {
+  onShowLogin?: () => void;
+};
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Validates the account-setup form state.
  * @returns An error message string if validation fails, or `null` when the
  *   form is valid.
  */
-function validateSetupForm(formState: SetupFormState): string | null {
-  if (!formState.username.trim() || !formState.password || !formState.confirmPassword) {
-    return 'Please fill in all fields.';
+function validateSetupForm(formState: SetupFormState, t: (key: string) => string): string | null {
+  if (!formState.email.trim() || !formState.password || !formState.confirmPassword || !formState.inviteCode.trim()) {
+    return t('register.errors.requiredFields');
   }
 
-  if (formState.username.trim().length < 3) {
-    return 'Username must be at least 3 characters long.';
+  if (!EMAIL_PATTERN.test(formState.email.trim())) {
+    return t('register.errors.invalidEmail');
   }
 
   if (formState.password.length < 6) {
-    return 'Password must be at least 6 characters long.';
+    return t('register.errors.weakPassword');
   }
 
   if (formState.password !== formState.confirmPassword) {
-    return 'Passwords do not match.';
+    return t('register.errors.passwordMismatch');
   }
 
   return null;
@@ -48,7 +56,8 @@ function validateSetupForm(formState: SetupFormState): string | null {
  * managers recognise this as a registration flow and offer to save the new
  * credentials after submission.
  */
-export default function SetupForm() {
+export default function SetupForm({ onShowLogin }: SetupFormProps) {
+  const { t } = useTranslation('auth');
   const { register } = useAuth();
   const baseUrl = import.meta.env.BASE_URL;
 
@@ -65,48 +74,52 @@ export default function SetupForm() {
       event.preventDefault();
       setErrorMessage('');
 
-      const validationError = validateSetupForm(formState);
+      const validationError = validateSetupForm(formState, t);
       if (validationError) {
         setErrorMessage(validationError);
         return;
       }
 
       setIsSubmitting(true);
-      const result = await register(formState.username.trim(), formState.password);
+      const result = await register(formState.email.trim(), formState.password, formState.inviteCode.trim());
       if (!result.success) {
         setErrorMessage(result.error);
       }
       setIsSubmitting(false);
     },
-    [formState, register],
+    [formState, register, t],
   );
 
   return (
     <AuthScreenLayout
-      title="Welcome to Incomify"
-      description="Set up your account to get started"
-      footerText="This is a single-user system. Only one account can be created."
+      title={t('register.title')}
+      description={t('register.description')}
+      footerText={t('register.footer')}
       logo={<img src={`${baseUrl}logo.svg`} alt="CloudCLI" className="h-16 w-16" />}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         <AuthInputField
-          id="username"
-          name="username"
-          label="Username"
-          value={formState.username}
-          onChange={(value) => updateField('username', value)}
-          placeholder="Enter your username"
+          id="email"
+          name="email"
+          label={t('register.email')}
+          value={formState.email}
+          onChange={(value) => updateField('email', value)}
+          placeholder={t('register.placeholders.email')}
           isDisabled={isSubmitting}
+          type="email"
           autoComplete="username"
         />
+        <p className="-mt-2 text-xs leading-5 text-muted-foreground">
+          {t('register.emailVerificationNotice')}
+        </p>
 
         <AuthInputField
           id="password"
           name="password"
-          label="Password"
+          label={t('register.password')}
           value={formState.password}
           onChange={(value) => updateField('password', value)}
-          placeholder="Enter your password"
+          placeholder={t('register.placeholders.password')}
           isDisabled={isSubmitting}
           type="password"
           autoComplete="new-password"
@@ -115,13 +128,24 @@ export default function SetupForm() {
         <AuthInputField
           id="confirmPassword"
           name="confirmPassword"
-          label="Confirm Password"
+          label={t('register.confirmPassword')}
           value={formState.confirmPassword}
           onChange={(value) => updateField('confirmPassword', value)}
-          placeholder="Confirm your password"
+          placeholder={t('register.placeholders.confirmPassword')}
           isDisabled={isSubmitting}
           type="password"
           autoComplete="new-password"
+        />
+
+        <AuthInputField
+          id="inviteCode"
+          name="inviteCode"
+          label={t('register.inviteCode')}
+          value={formState.inviteCode}
+          onChange={(value) => updateField('inviteCode', value)}
+          placeholder={t('register.placeholders.inviteCode')}
+          isDisabled={isSubmitting}
+          autoComplete="off"
         />
 
         <AuthErrorAlert errorMessage={errorMessage} />
@@ -131,9 +155,19 @@ export default function SetupForm() {
           disabled={isSubmitting}
           className="w-full rounded-md bg-blue-600 px-4 py-2 font-medium text-white transition-colors duration-200 hover:bg-blue-700 disabled:bg-blue-400"
         >
-          {isSubmitting ? 'Setting up...' : 'Create Account'}
+          {isSubmitting ? t('register.loading') : t('register.submit')}
         </button>
       </form>
+
+      {onShowLogin ? (
+        <button
+          type="button"
+          onClick={onShowLogin}
+          className="mt-4 w-full text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+        >
+          {t('register.signIn')}
+        </button>
+      ) : null}
     </AuthScreenLayout>
   );
 }

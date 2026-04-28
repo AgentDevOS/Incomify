@@ -107,36 +107,51 @@ if (process.env.DATABASE_PATH) {
 console.log(c.dim('═'.repeat(60)));
 console.log('');
 
+function ensureUserSchemaColumns() {
+  const usersTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+  if (!usersTable) {
+    return;
+  }
+
+  const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+  const columnNames = tableInfo.map(col => col.name);
+
+  if (!columnNames.includes('git_name')) {
+    console.log('Running migration: Adding git_name column');
+    db.exec('ALTER TABLE users ADD COLUMN git_name TEXT');
+  }
+
+  if (!columnNames.includes('git_email')) {
+    console.log('Running migration: Adding git_email column');
+    db.exec('ALTER TABLE users ADD COLUMN git_email TEXT');
+  }
+
+  if (!columnNames.includes('has_completed_onboarding')) {
+    console.log('Running migration: Adding has_completed_onboarding column');
+    db.exec('ALTER TABLE users ADD COLUMN has_completed_onboarding BOOLEAN DEFAULT 0');
+  }
+
+  if (!columnNames.includes('public_id')) {
+    console.log('Running migration: Adding public_id column');
+    db.exec('ALTER TABLE users ADD COLUMN public_id TEXT');
+  }
+
+  if (!columnNames.includes('email')) {
+    console.log('Running migration: Adding email column');
+    db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+  }
+}
+
 const runMigrations = () => {
   try {
-    const tableInfo = db.prepare("PRAGMA table_info(users)").all();
-    const columnNames = tableInfo.map(col => col.name);
-
-    if (!columnNames.includes('git_name')) {
-      console.log('Running migration: Adding git_name column');
-      db.exec('ALTER TABLE users ADD COLUMN git_name TEXT');
-    }
-
-    if (!columnNames.includes('git_email')) {
-      console.log('Running migration: Adding git_email column');
-      db.exec('ALTER TABLE users ADD COLUMN git_email TEXT');
-    }
-
-    if (!columnNames.includes('has_completed_onboarding')) {
-      console.log('Running migration: Adding has_completed_onboarding column');
-      db.exec('ALTER TABLE users ADD COLUMN has_completed_onboarding BOOLEAN DEFAULT 0');
-    }
-
-    if (!columnNames.includes('public_id')) {
-      console.log('Running migration: Adding public_id column');
-      db.exec('ALTER TABLE users ADD COLUMN public_id TEXT');
-    }
+    ensureUserSchemaColumns();
 
     const usersMissingPublicId = db.prepare("SELECT id FROM users WHERE public_id IS NULL OR TRIM(public_id) = ''").all();
     for (const row of usersMissingPublicId) {
       ensureUserPublicId(row.id);
     }
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id)');
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email)) WHERE email IS NOT NULL');
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS user_notification_preferences (
@@ -213,6 +228,7 @@ const runMigrations = () => {
 const initializeDatabase = async () => {
   try {
     const initSQL = fs.readFileSync(INIT_SQL_PATH, 'utf8');
+    ensureUserSchemaColumns();
     db.exec(initSQL);
     console.log('Database initialized successfully');
     runMigrations();
@@ -235,14 +251,14 @@ const userDb = {
   },
 
   // Create a new user
-  createUser: (username, passwordHash) => {
+  createUser: (username, passwordHash, email = null) => {
     try {
       for (let attempt = 0; attempt < 10; attempt += 1) {
         const publicId = generateUserPublicId();
         try {
-          const stmt = db.prepare('INSERT INTO users (username, password_hash, public_id) VALUES (?, ?, ?)');
-          const result = stmt.run(username, passwordHash, publicId);
-          return { id: result.lastInsertRowid, username, publicId };
+          const stmt = db.prepare('INSERT INTO users (username, email, password_hash, public_id) VALUES (?, ?, ?, ?)');
+          const result = stmt.run(username, email, passwordHash, publicId);
+          return { id: result.lastInsertRowid, username, email, publicId };
         } catch (err) {
           if (err.code !== 'SQLITE_CONSTRAINT_UNIQUE' || !String(err.message || '').includes('users.public_id')) {
             throw err;
@@ -266,6 +282,15 @@ const userDb = {
     }
   },
 
+  getUserByEmail: (email) => {
+    try {
+      const row = db.prepare('SELECT *, public_id AS publicId FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1').get(email);
+      return row;
+    } catch (err) {
+      throw err;
+    }
+  },
+
   // Update last login time (non-fatal — logged but not thrown)
   updateLastLogin: (userId) => {
     try {
@@ -278,7 +303,7 @@ const userDb = {
   // Get user by ID
   getUserById: (userId) => {
     try {
-      const row = db.prepare('SELECT id, username, public_id AS publicId, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
+      const row = db.prepare('SELECT id, username, email, public_id AS publicId, created_at, last_login FROM users WHERE id = ? AND is_active = 1').get(userId);
       return row;
     } catch (err) {
       throw err;
@@ -287,7 +312,7 @@ const userDb = {
 
   getFirstUser: () => {
     try {
-      const row = db.prepare('SELECT id, username, public_id AS publicId, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
+      const row = db.prepare('SELECT id, username, email, public_id AS publicId, created_at, last_login FROM users WHERE is_active = 1 LIMIT 1').get();
       return row;
     } catch (err) {
       throw err;
@@ -382,7 +407,7 @@ const apiKeysDb = {
   validateApiKey: (apiKey) => {
     try {
       const row = db.prepare(`
-        SELECT u.id, u.username, u.public_id AS publicId, ak.id as api_key_id
+        SELECT u.id, u.username, u.email, u.public_id AS publicId, ak.id as api_key_id
         FROM api_keys ak
         JOIN users u ON ak.user_id = u.id
         WHERE ak.api_key = ? AND ak.is_active = 1 AND u.is_active = 1

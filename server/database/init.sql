@@ -5,6 +5,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
+    email TEXT,
     password_hash TEXT NOT NULL,
     public_id TEXT UNIQUE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users(LOWER(email)) WHERE email IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_public_id ON users(public_id);
 

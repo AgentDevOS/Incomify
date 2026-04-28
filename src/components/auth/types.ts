@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 export type AuthUser = {
   id?: number | string;
   username: string;
+  email?: string | null;
   [key: string]: unknown;
 };
 
@@ -39,8 +40,8 @@ export type AuthContextValue = {
   needsSetup: boolean;
   hasCompletedOnboarding: boolean;
   error: string | null;
-  login: (username: string, password: string) => Promise<AuthActionResult>;
-  register: (username: string, password: string) => Promise<AuthActionResult>;
+  login: (email: string, password: string) => Promise<AuthActionResult>;
+  register: (email: string, password: string, inviteCode: string) => Promise<AuthActionResult>;
   logout: () => void;
   refreshOnboardingStatus: () => Promise<void>;
 };

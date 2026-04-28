@@ -29,6 +29,7 @@
     "client": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node --test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",

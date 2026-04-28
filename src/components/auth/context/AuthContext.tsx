@@ -129,10 +129,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [checkAuthStatus, checkOnboardingStatus]);
 
   const login = useCallback<AuthContextValue['login']>(
-    async (username, password) => {
+    async (email, password) => {
       try {
         setError(null);
-        const response = await api.auth.login(username, password);
+        const response = await api.auth.login(email, password);
         const payload = await parseJsonSafely<AuthSessionPayload>(response);
 
         if (!response.ok || !payload?.token || !payload.user) {
@@ -155,10 +155,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
   );
 
   const register = useCallback<AuthContextValue['register']>(
-    async (username, password) => {
+    async (email, password, inviteCode) => {
       try {
         setError(null);
-        const response = await api.auth.register(username, password);
+        const response = await api.auth.register(email, password, inviteCode);
         const payload = await parseJsonSafely<AuthSessionPayload>(response);
 
         if (!response.ok || !payload?.token || !payload.user) {
