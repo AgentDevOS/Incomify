@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { MainContentHeaderProps } from '../../types/types';
@@ -7,11 +7,13 @@ import { Button } from '../../../../shared/view/ui';
 import MobileMenuButton from './MobileMenuButton';
 import MainContentTitle from './MainContentTitle';
 
-const DEFAULT_PUBLIC_DEPLOY_BASE_URL = 'https://auto.huibanxue.com/aisoft/deploy';
+const DEFAULT_PUBLIC_DEPLOY_BASE_URL = 'https://cx.incomify.com/aisoft/deploy';
 
 type DeploymentTarget = {
   type?: string;
   url?: string | null;
+  available?: boolean;
+  sourceAvailable?: boolean;
 };
 
 type DeploymentPayload = {
@@ -83,6 +85,39 @@ export default function MainContentHeader({
 }: MainContentHeaderProps) {
   const { t } = useTranslation();
   const [isOpeningPrototype, setIsOpeningPrototype] = useState(false);
+  const [prototypeUrl, setPrototypeUrl] = useState('');
+
+  useEffect(() => {
+    let isActive = true;
+
+    if (!showPrototypeEntry || !selectedProject?.name) {
+      setPrototypeUrl('');
+      return () => {
+        isActive = false;
+      };
+    }
+
+    api.getProjectDeployment(selectedProject.name)
+      .then(parseDeploymentResponse)
+      .then((payload) => {
+        if (!isActive) {
+          return;
+        }
+
+        const prototypeTarget = payload.deployment?.targets?.find((target) => target.type === 'prototype');
+        const hasPrototype = Boolean(prototypeTarget?.available || prototypeTarget?.sourceAvailable);
+        setPrototypeUrl(hasPrototype ? prototypeTarget?.url || '' : '');
+      })
+      .catch(() => {
+        if (isActive) {
+          setPrototypeUrl('');
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [selectedProject?.name, showPrototypeEntry]);
 
   const handleOpenPrototype = async () => {
     if (!selectedProject?.name || isOpeningPrototype) {
@@ -93,7 +128,7 @@ export default function MainContentHeader({
 
     try {
       const syncCandidates = ['prototype'];
-      let prototypeUrl = '';
+      let nextPrototypeUrl = prototypeUrl;
       let lastErrorMessage = '';
 
       for (const sourcePath of syncCandidates) {
@@ -105,14 +140,14 @@ export default function MainContentHeader({
         const payload = await parseDeploymentResponse(response);
 
         if (response.ok) {
-          prototypeUrl = payload.deployment?.publicUrl || '';
+          nextPrototypeUrl = payload.deployment?.publicUrl || nextPrototypeUrl;
           break;
         }
 
         lastErrorMessage = payload.error || lastErrorMessage;
       }
 
-      if (!prototypeUrl) {
+      if (!nextPrototypeUrl) {
         const response = await api.getProjectDeployment(selectedProject.name);
         const payload = await parseDeploymentResponse(response);
 
@@ -120,14 +155,17 @@ export default function MainContentHeader({
           throw new Error(payload.error || t('mainContent.prototypeOpenFailed'));
         }
 
-        prototypeUrl = payload.deployment?.targets?.find((target) => target.type === 'prototype')?.url || '';
+        const prototypeTarget = payload.deployment?.targets?.find((target) => target.type === 'prototype');
+        const hasPrototype = Boolean(prototypeTarget?.available || prototypeTarget?.sourceAvailable);
+        nextPrototypeUrl = hasPrototype ? prototypeTarget?.url || '' : '';
       }
 
-      if (!prototypeUrl) {
+      if (!nextPrototypeUrl) {
         throw new Error(lastErrorMessage || t('mainContent.prototypeNotAvailable'));
       }
 
-      window.open(toPublicPrototypeUrl(prototypeUrl), '_blank', 'noopener,noreferrer');
+      setPrototypeUrl(nextPrototypeUrl);
+      window.open(toPublicPrototypeUrl(nextPrototypeUrl), '_blank', 'noopener,noreferrer');
     } catch (error) {
       const message = error instanceof Error
         ? error.message
@@ -151,7 +189,7 @@ export default function MainContentHeader({
           />
         </div>
 
-        {showPrototypeEntry && (
+        {showPrototypeEntry && prototypeUrl ? (
           <Button
             type="button"
             variant="outline"
@@ -170,7 +208,7 @@ export default function MainContentHeader({
               {isOpeningPrototype ? t('mainContent.openingPrototype') : t('mainContent.openPrototype')}
             </span>
           </Button>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -8,6 +8,12 @@ const ARTIFACT_SOURCE_PATH_ALLOWLIST = {
   prototype: new Set(['prototype']),
   web: new Set(['dist']),
 };
+const ARTIFACT_ENTRYPOINTS = {
+  prototype: 'index.html',
+};
+const ARTIFACT_SOURCE_PATHS = {
+  prototype: 'prototype',
+};
 
 const DEFAULT_DEPLOY_ROOT = '~/workspace/deploy';
 
@@ -47,6 +53,19 @@ function isPathInside(parentPath, childPath) {
   }
 
   return normalizedChild.startsWith(`${normalizedParent}${path.sep}`);
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return false;
+    }
+
+    throw error;
+  }
 }
 
 async function clearDirectoryContents(targetPath) {
@@ -148,20 +167,46 @@ export function buildArtifactPublicUrl({
   return trailingSlash ? `${url}/` : url;
 }
 
-export function getProjectDeploymentInfo({ userId, projectId, baseUrl = null }) {
+async function getArtifactAvailability({ artifactType, targetPath, projectPath = null }) {
+  const entrypoint = ARTIFACT_ENTRYPOINTS[artifactType] || null;
+  if (!entrypoint) {
+    return {
+      available: false,
+      deployedAvailable: false,
+      sourceAvailable: false,
+      entrypoint: null,
+    };
+  }
+
+  const deployedAvailable = await pathExists(path.join(targetPath, entrypoint));
+  const sourcePath = ARTIFACT_SOURCE_PATHS[artifactType] || null;
+  const sourceAvailable = projectPath
+    ? await pathExists(path.join(projectPath, sourcePath || artifactType, entrypoint))
+    : false;
+
+  return {
+    available: deployedAvailable || sourceAvailable,
+    deployedAvailable,
+    sourceAvailable,
+    entrypoint,
+  };
+}
+
+export async function getProjectDeploymentInfo({ userId, projectId, baseUrl = null, projectPath = null }) {
   const rootPath = getProjectDeployRoot({ userId, projectId });
   const resolvedBaseUrl = normalizeBaseUrl(baseUrl || getDeployBaseUrl()) || null;
   const userPublicId = resolveDeployUserSegment(userId);
+  const targets = await Promise.all(DEPLOYABLE_ARTIFACT_TYPES.map(async (type) => {
+    const targetPath = path.join(rootPath, type);
+    const availability = await getArtifactAvailability({
+      artifactType: type,
+      targetPath,
+      projectPath,
+    });
 
-  return {
-    userId,
-    userPublicId,
-    projectId,
-    rootPath,
-    baseUrl: resolvedBaseUrl,
-    targets: DEPLOYABLE_ARTIFACT_TYPES.map((type) => ({
+    return {
       type,
-      path: path.join(rootPath, type),
+      path: targetPath,
       url: buildArtifactPublicUrl({
         userId,
         projectId,
@@ -169,11 +214,21 @@ export function getProjectDeploymentInfo({ userId, projectId, baseUrl = null }) 
         baseUrl: resolvedBaseUrl,
         trailingSlash: true,
       }),
-    })),
+      ...availability,
+    };
+  }));
+
+  return {
+    userId,
+    userPublicId,
+    projectId,
+    rootPath,
+    baseUrl: resolvedBaseUrl,
+    targets,
   };
 }
 
-export async function ensureProjectDeployDirectories({ userId, projectId, baseUrl = null }) {
+export async function ensureProjectDeployDirectories({ userId, projectId, baseUrl = null, projectPath = null }) {
   const legacyProjectDeployRoot = path.join(
     getDeployRoot(),
     normalizeIdentifier(userId, 'User ID'),
@@ -201,7 +256,7 @@ export async function ensureProjectDeployDirectories({ userId, projectId, baseUr
     )),
   );
 
-  return getProjectDeploymentInfo({ userId, projectId, baseUrl });
+  return getProjectDeploymentInfo({ userId, projectId, baseUrl, projectPath });
 }
 
 export async function deployProjectArtifact({
@@ -215,7 +270,7 @@ export async function deployProjectArtifact({
 }) {
   const normalizedArtifactType = validateArtifactType(artifactType);
   const normalizedSourcePath = validateArtifactSourcePath(normalizedArtifactType, sourcePath);
-  const deploymentInfo = await ensureProjectDeployDirectories({ userId, projectId, baseUrl });
+  const deploymentInfo = await ensureProjectDeployDirectories({ userId, projectId, baseUrl, projectPath });
   const targetPath = getArtifactDeployPath({ userId, projectId, artifactType: normalizedArtifactType });
   const resolvedSourcePath = await resolveProjectScopedSourcePath(projectPath, normalizedSourcePath);
   const sourceStats = await fs.stat(resolvedSourcePath);

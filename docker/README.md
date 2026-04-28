@@ -75,6 +75,14 @@ The agent (Claude Code, Codex, or Gemini) comes from the base image. Claude Code
 | `SERVER_PORT` | `3001` | Port for the web UI |
 | `HOST` | `0.0.0.0` | Bind address |
 | `DATABASE_PATH` | `~/.cloudcli/auth.db` | SQLite database location |
+| `DEPLOY_ROOT` | `~/workspace/deploy` | Static artifact root served at `/aisoft/deploy/` |
+| `DEPLOY_BASE_URL` | inferred from request | Public URL prefix, for example `https://cx.incomify.com/aisoft/deploy` |
+
+## Nginx Deployment Paths
+
+Use `docker/nginx/incomify.conf` as the production reference for `cx.incomify.com`.
+It maps URLs like `/aisoft/deploy/usr_FVpeE5JQZuaOkldc/1/prototype/` to
+`DEPLOY_ROOT/usr_FVpeE5JQZuaOkldc/1/prototype/index.html`.
 
 ## Network Policies
 

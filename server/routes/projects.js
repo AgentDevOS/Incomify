@@ -595,6 +595,7 @@ router.get('/:projectName/deployment', async (req, res) => {
       userId: req.user.id,
       projectId: projectRecord.id,
       baseUrl: resolveDeploymentBaseUrl(req),
+      projectPath: projectRecord.project_path,
     });
 
     res.json({
