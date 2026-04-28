@@ -68,6 +68,7 @@ import os from 'os';
 import sessionManager from './sessionManager.js';
 import { applyCustomSessionNames, userProjectsDb } from './database/db.js';
 import { ensureProjectDeployDirectories } from './services/deployment.js';
+import { getProjectBackend, provisionRustBackendForProject } from './services/project-backend.js';
 import {
   registerProjectDeploymentWatcher,
   unregisterProjectDeploymentWatcher,
@@ -613,6 +614,7 @@ async function getProjects(userId = null, progressCallback = null) {
         path: actualProjectDir,
         displayName: customName || autoDisplayName,
         fullPath: fullPath,
+        backend: scopedProject?.id != null ? getProjectBackend(scopedProject.id) : null,
         isCustomName: !!customName,
         sessions: [],
         geminiSessions: [],
@@ -744,6 +746,7 @@ async function getProjects(userId = null, progressCallback = null) {
       path: actualProjectDir,
       displayName: customName || await generateDisplayName(projectName, actualProjectDir),
       fullPath: actualProjectDir,
+      backend: scopedProject?.id != null ? getProjectBackend(scopedProject.id) : null,
       isCustomName: !!customName,
       isManuallyAdded: true,
       sessions: [],
@@ -1491,21 +1494,35 @@ async function addProjectManually(projectPath, displayName = null, userId = null
   await saveProjectConfig(config);
 
   let scopedProject = null;
+  let backend = null;
   if (userId != null) {
-    scopedProject = userProjectsDb.upsertProject({
-      userId,
-      projectName,
-      projectPath: absolutePath,
-      displayName: displayName?.trim() || null,
-      source: 'manual',
-    });
-
-    if (scopedProject?.id != null) {
-      await ensureProjectDeployDirectories({
+    try {
+      scopedProject = userProjectsDb.upsertProject({
         userId,
-        projectId: scopedProject.id,
+        projectName,
+        projectPath: absolutePath,
+        displayName: displayName?.trim() || null,
+        source: 'manual',
       });
-      await registerProjectDeploymentWatcher(scopedProject);
+
+      if (scopedProject?.id != null) {
+        backend = await provisionRustBackendForProject({
+          projectId: scopedProject.id,
+          projectPath: absolutePath,
+        });
+        await ensureProjectDeployDirectories({
+          userId,
+          projectId: scopedProject.id,
+        });
+        await registerProjectDeploymentWatcher(scopedProject);
+      }
+    } catch (error) {
+      if (scopedProject?.id != null) {
+        userProjectsDb.deleteProject(userId, projectName);
+      }
+      delete config[projectName];
+      await saveProjectConfig(config);
+      throw error;
     }
   }
 
@@ -1515,6 +1532,7 @@ async function addProjectManually(projectPath, displayName = null, userId = null
     path: absolutePath,
     fullPath: absolutePath,
     displayName: scopedProject?.display_name || displayName || await generateDisplayName(projectName, absolutePath),
+    backend,
     isManuallyAdded: true,
     sessions: [],
     cursorSessions: []

@@ -198,6 +198,18 @@ const runMigrations = () => {
     `);
     db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id)');
     db.exec('CREATE INDEX IF NOT EXISTS idx_user_projects_lookup ON user_projects(user_id, project_name)');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS project_backends (
+        project_id INTEGER PRIMARY KEY,
+        language TEXT NOT NULL DEFAULT 'rust',
+        port INTEGER NOT NULL UNIQUE,
+        backend_path TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (project_id) REFERENCES user_projects(id) ON DELETE CASCADE
+      )
+    `);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_project_backends_port ON project_backends(port)');
     // Create app_config table if it doesn't exist (for existing installations)
     db.exec(`CREATE TABLE IF NOT EXISTS app_config (
       key TEXT PRIMARY KEY,
@@ -775,6 +787,41 @@ const userProjectsDb = {
   },
 };
 
+const projectBackendsDb = {
+  createBackend: ({ projectId, language = 'rust', port, backendPath }) => {
+    db.prepare(
+      `INSERT INTO project_backends (project_id, language, port, backend_path, updated_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+       ON CONFLICT(project_id) DO UPDATE SET
+         language = excluded.language,
+         port = excluded.port,
+         backend_path = excluded.backend_path,
+         updated_at = CURRENT_TIMESTAMP`
+    ).run(projectId, language, port, backendPath);
+
+    return projectBackendsDb.getBackendForProject(projectId);
+  },
+
+  getBackendForProject: (projectId) => {
+    const row = db.prepare(
+      'SELECT * FROM project_backends WHERE project_id = ?'
+    ).get(projectId);
+
+    return row || null;
+  },
+
+  getUsedPorts: () => {
+    return db.prepare(
+      'SELECT port FROM project_backends ORDER BY port ASC'
+    ).all().map((row) => row.port);
+  },
+
+  deleteBackend: (projectId) => {
+    const result = db.prepare('DELETE FROM project_backends WHERE project_id = ?').run(projectId);
+    return result.changes > 0;
+  },
+};
+
 // App config database operations
 const appConfigDb = {
   get: (key) => {
@@ -828,6 +875,7 @@ export {
   apiKeysDb,
   credentialsDb,
   userProjectsDb,
+  projectBackendsDb,
   notificationPreferencesDb,
   pushSubscriptionsDb,
   sessionNamesDb,

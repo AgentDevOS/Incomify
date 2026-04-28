@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS user_projects (
 CREATE INDEX IF NOT EXISTS idx_user_projects_user_id ON user_projects(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_projects_lookup ON user_projects(user_id, project_name);
 
+-- Project backend metadata
+CREATE TABLE IF NOT EXISTS project_backends (
+    project_id INTEGER PRIMARY KEY,
+    language TEXT NOT NULL DEFAULT 'rust',
+    port INTEGER NOT NULL UNIQUE,
+    backend_path TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES user_projects(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_backends_port ON project_backends(port);
+
 -- Session custom names (provider-agnostic display name overrides)
 CREATE TABLE IF NOT EXISTS session_names (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
