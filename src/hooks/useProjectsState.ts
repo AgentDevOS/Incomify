@@ -9,6 +9,15 @@ import type {
   ProjectSession,
   ProjectsUpdatedMessage,
 } from '../types/app';
+import {
+  isProjectSelectionStale,
+  LAST_SELECTED_PROJECT_KEY,
+  prunePersistedProjectSelections,
+  readLastSessionByProject,
+  readPersistedString,
+  writeLastSessionByProject,
+  writePersistedString,
+} from './projectPersistence.js';
 
 type UseProjectsStateArgs = {
   sessionId?: string;
@@ -22,62 +31,7 @@ type FetchProjectsOptions = {
   showLoadingState?: boolean;
 };
 
-const LAST_SELECTED_PROJECT_KEY = 'lastSelectedProject';
-const LAST_SESSION_BY_PROJECT_KEY = 'lastSessionByProject';
-
 const serialize = (value: unknown) => JSON.stringify(value ?? null);
-
-const readPersistedString = (key: string): string | null => {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-};
-
-const writePersistedString = (key: string, value: string | null) => {
-  try {
-    if (!value) {
-      localStorage.removeItem(key);
-      return;
-    }
-
-    localStorage.setItem(key, value);
-  } catch {
-    // Silently ignore storage errors
-  }
-};
-
-const readLastSessionByProject = (): Record<string, string> => {
-  try {
-    const raw = localStorage.getItem(LAST_SESSION_BY_PROJECT_KEY);
-    if (!raw) {
-      return {};
-    }
-
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {};
-    }
-
-    return Object.entries(parsed).reduce<Record<string, string>>((acc, [projectName, sessionId]) => {
-      if (typeof projectName === 'string' && typeof sessionId === 'string' && sessionId) {
-        acc[projectName] = sessionId;
-      }
-      return acc;
-    }, {});
-  } catch {
-    return {};
-  }
-};
-
-const writeLastSessionByProject = (value: Record<string, string>) => {
-  try {
-    localStorage.setItem(LAST_SESSION_BY_PROJECT_KEY, JSON.stringify(value));
-  } catch {
-    // Silently ignore storage errors
-  }
-};
 
 const projectsHaveChanges = (
   prevProjects: Project[],
@@ -356,6 +310,8 @@ export function useProjectsState({
         return;
       }
 
+      prunePersistedProjectSelections(projectData);
+
       console.log('[SessionDebug][Projects] fetched projects', projectData.map((project) => ({
         name: project.name,
         sessions: project.sessions?.map((session) => session.id) ?? [],
@@ -395,6 +351,18 @@ export function useProjectsState({
   useEffect(() => {
     void fetchProjects();
   }, [fetchProjects]);
+
+  useEffect(() => {
+    const staleProjectName = selectedProject?.name;
+    if (!staleProjectName || !isProjectSelectionStale(projects, selectedProject)) {
+      return;
+    }
+
+    clearPersistedProjectSelection(staleProjectName);
+    setSelectedProject(null);
+    setSelectedSession(null);
+    navigate('/');
+  }, [clearPersistedProjectSelection, navigate, projects, selectedProject]);
 
   useEffect(() => {
     if (sessionId) {
@@ -516,6 +484,7 @@ export function useProjectsState({
       (activeSessions.size > 0 && Array.from(activeSessions).some((id) => id.startsWith('new-session-')));
 
     const updatedProjects = projectsMessage.projects;
+    prunePersistedProjectSelections(updatedProjects);
 
     if (
       hasActiveSession &&
@@ -757,6 +726,8 @@ export function useProjectsState({
     try {
       const response = await api.projects();
       const freshProjects = (await response.json()) as Project[];
+
+      prunePersistedProjectSelections(freshProjects);
 
       setProjects((prevProjects) =>
         projectsHaveChanges(prevProjects, freshProjects, true) ? freshProjects : prevProjects,

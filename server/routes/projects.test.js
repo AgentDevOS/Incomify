@@ -15,17 +15,70 @@ process.env.WORKSPACES_ROOT = path.join(testRoot, 'workspaces');
 
 const { installStageGatedWorkflowKit } = await import('./projects.js');
 
+async function writeKitFile(relativePath, content = '') {
+  const targetPath = path.join(kitDir, relativePath);
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.writeFile(targetPath, content, 'utf8');
+}
+
+async function createMinimalWorkflowKit() {
+  await writeKitFile('AGENTS.md', '# Template agents\n');
+  await writeKitFile('README.md', '# Template readme\n');
+  await writeKitFile('PROJECT-INSTALL.md', '# Template install\n');
+  await writeKitFile('package.json', JSON.stringify({
+    private: true,
+    scripts: {
+      'sync:backend-api-paths': 'node scripts/workflow/sync-backend-api-paths.js',
+    },
+  }, null, 2));
+  await writeKitFile('scripts/package.json', '{"type":"commonjs"}\n');
+  await writeKitFile('scripts/run-all-tests.js');
+  await writeKitFile('scripts/verify-prototype.js');
+  await writeKitFile('scripts/test-verify-prototype.js');
+  await writeKitFile('scripts/test-workflow-config.js');
+  await writeKitFile('scripts/test-sync-backend-api-paths.js');
+  await writeKitFile('scripts/workflow/config.js');
+  await writeKitFile('scripts/workflow/config.cjs');
+  await writeKitFile('scripts/workflow/state.js');
+  await writeKitFile('scripts/workflow/state.cjs');
+  await writeKitFile('scripts/workflow/doctor.js');
+  await writeKitFile('scripts/workflow/sync-backend-api-paths.js');
+  await writeKitFile('scripts/workflow/gate.js', `const fs = require('fs');
+const path = require('path');
+const [, , command, ...rest] = process.argv;
+if (command !== 'init') process.exit(0);
+fs.mkdirSync('.workflow', { recursive: true });
+fs.writeFileSync(path.join('.workflow', 'state.json'), JSON.stringify({
+  projectName: rest.join(' '),
+  currentStage: 'requirements_analysis',
+  awaitingApproval: false
+}, null, 2) + '\\n');
+`);
+  await writeKitFile('scripts/hooks/workflow-stage-guard.js');
+  await writeKitFile('scripts/hooks/workflow-stage-sync.js');
+  await writeKitFile('scripts/hooks/workflow-session-start.js');
+  await writeKitFile('scripts/hooks/workflow-session-end.js');
+  await writeKitFile('skills/stage-gated-delivery/SKILL.md', '# Template skill\n');
+  await writeKitFile('.workflow/state.example.json', '{}\n');
+  await writeKitFile('.workflow/test-scenario.md', '# Test Scenario\n');
+  await writeKitFile('.workflow/test-report.md', '# Test Report\n');
+  await writeKitFile('.workflow/requirement-interview-template.md', '# Test Interview\n');
+  await writeKitFile('.workflow/test-contract.example.json', '{}\n');
+  await writeKitFile('.workflow/backend-contract.example.json', '{}\n');
+  await writeKitFile('.workflow/e2e-report.example.json', '{}\n');
+  await writeKitFile('.workflow/api-report.example.json', '{}\n');
+}
+
 describe('project routes helpers', () => {
   before(async () => {
-    await fs.mkdir(kitDir, { recursive: true });
-    await fs.writeFile(path.join(kitDir, 'AGENTS.md'), '# Template agents\n', 'utf8');
+    await createMinimalWorkflowKit();
   });
 
   after(async () => {
     await fs.rm(testRoot, { recursive: true, force: true });
   });
 
-  test('installs only AGENTS.md from the stage-gated workflow kit', async () => {
+  test('installs the Codex stage-gated workflow kit and initializes state', async () => {
     const targetProjectPath = path.join(testRoot, 'target-project');
     const progressMessages = [];
 
@@ -37,10 +90,12 @@ describe('project routes helpers', () => {
       await fs.readFile(path.join(targetProjectPath, 'AGENTS.md'), 'utf8'),
       '# Template agents\n',
     );
-    await assert.rejects(
-      fs.access(path.join(targetProjectPath, 'install-plan-a.sh')),
-      { code: 'ENOENT' },
-    );
-    assert.deepEqual(progressMessages, ['Copied AGENTS.md']);
+    await assert.rejects(fs.access(path.join(targetProjectPath, 'CLAUDE.md')), { code: 'ENOENT' });
+    await assert.rejects(fs.access(path.join(targetProjectPath, '.claude', 'settings.json')), { code: 'ENOENT' });
+
+    const state = JSON.parse(await fs.readFile(path.join(targetProjectPath, '.workflow', 'state.json'), 'utf8'));
+    assert.equal(state.projectName, 'Example Project');
+    assert.equal(state.currentStage, 'requirements_analysis');
+    assert.deepEqual(progressMessages, ['Copied stage-gated workflow kit', 'Initialized stage-gated workflow']);
   });
 });

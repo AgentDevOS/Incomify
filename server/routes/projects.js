@@ -31,6 +31,40 @@ const STAGE_GATED_WORKFLOW_AGENTS_FILE = path.join(
   STAGE_GATED_WORKFLOW_KIT_DIR,
   'AGENTS.md',
 );
+const STAGE_GATED_WORKFLOW_REQUIRED_FILES = [
+  'AGENTS.md',
+  'README.md',
+  'PROJECT-INSTALL.md',
+  'package.json',
+  path.join('scripts', 'package.json'),
+  path.join('scripts', 'run-all-tests.js'),
+  path.join('scripts', 'verify-prototype.js'),
+  path.join('scripts', 'test-verify-prototype.js'),
+  path.join('scripts', 'test-workflow-config.js'),
+  path.join('scripts', 'test-sync-backend-api-paths.js'),
+  path.join('scripts', 'workflow', 'gate.js'),
+  path.join('scripts', 'workflow', 'config.js'),
+  path.join('scripts', 'workflow', 'state.js'),
+  path.join('scripts', 'workflow', 'doctor.js'),
+  path.join('scripts', 'workflow', 'sync-backend-api-paths.js'),
+  path.join('scripts', 'hooks', 'workflow-stage-guard.js'),
+  path.join('scripts', 'hooks', 'workflow-stage-sync.js'),
+  path.join('scripts', 'hooks', 'workflow-session-start.js'),
+  path.join('scripts', 'hooks', 'workflow-session-end.js'),
+  path.join('skills', 'stage-gated-delivery', 'SKILL.md'),
+  path.join('.workflow', 'state.example.json'),
+  path.join('.workflow', 'test-scenario.md'),
+  path.join('.workflow', 'test-report.md'),
+  path.join('.workflow', 'requirement-interview-template.md'),
+  path.join('.workflow', 'test-contract.example.json'),
+  path.join('.workflow', 'backend-contract.example.json'),
+  path.join('.workflow', 'e2e-report.example.json'),
+  path.join('.workflow', 'api-report.example.json'),
+];
+const STAGE_GATED_WORKFLOW_COPY_EXCLUDES = new Set([
+  '.git',
+  'node_modules',
+]);
 
 function sanitizeGitError(message, token) {
   if (!message || !token) return message;
@@ -169,6 +203,22 @@ export async function installStageGatedWorkflowKit(targetProjectPath, projectNam
     throw new Error('Project name is required for stage-gated workflow kit installation');
   }
 
+  await assertStageGatedWorkflowKitIsComplete();
+  await assertDirectoryIsEmpty(targetProjectPath);
+
+  await fs.mkdir(targetProjectPath, { recursive: true });
+  await copyStageGatedWorkflowKitContents(targetProjectPath);
+  onProgress?.('Copied stage-gated workflow kit');
+
+  await runProjectNodeScript(
+    path.join('scripts', 'workflow', 'gate.js'),
+    ['init', projectName],
+    targetProjectPath,
+  );
+  onProgress?.('Initialized stage-gated workflow');
+}
+
+async function assertStageGatedWorkflowKitIsComplete() {
   try {
     await fs.access(STAGE_GATED_WORKFLOW_AGENTS_FILE);
   } catch (error) {
@@ -178,12 +228,97 @@ export async function installStageGatedWorkflowKit(targetProjectPath, projectNam
     throw error;
   }
 
+  const missingFiles = [];
+  for (const relativePath of STAGE_GATED_WORKFLOW_REQUIRED_FILES) {
+    try {
+      await fs.access(path.join(STAGE_GATED_WORKFLOW_KIT_DIR, relativePath));
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        missingFiles.push(relativePath);
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  if (missingFiles.length > 0) {
+    throw new Error(`Stage-gated workflow kit is incomplete. Missing: ${missingFiles.join(', ')}`);
+  }
+}
+
+async function assertDirectoryIsEmpty(targetProjectPath) {
   await fs.mkdir(targetProjectPath, { recursive: true });
-  await fs.copyFile(
-    STAGE_GATED_WORKFLOW_AGENTS_FILE,
-    path.join(targetProjectPath, 'AGENTS.md'),
+  const entries = await fs.readdir(targetProjectPath);
+  const meaningfulEntries = entries.filter((entry) => entry !== '.DS_Store');
+
+  if (meaningfulEntries.length > 0) {
+    throw new Error('Stage-gated workflow kit installation only supports empty project directories');
+  }
+}
+
+async function copyStageGatedWorkflowKitContents(targetProjectPath) {
+  const entries = await fs.readdir(STAGE_GATED_WORKFLOW_KIT_DIR, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (STAGE_GATED_WORKFLOW_COPY_EXCLUDES.has(entry.name)) {
+      continue;
+    }
+
+    await fs.cp(
+      path.join(STAGE_GATED_WORKFLOW_KIT_DIR, entry.name),
+      path.join(targetProjectPath, entry.name),
+      {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+      },
+    );
+  }
+}
+
+function runProjectNodeScript(relativeScriptPath, args, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [relativeScriptPath, ...args], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+
+      const output = [stdout.trim(), stderr.trim()].filter(Boolean).join('\n');
+      reject(new Error(`${relativeScriptPath} failed with exit code ${code}${output ? `:\n${output}` : ''}`));
+    });
+  });
+}
+
+async function syncStageGatedBackendApiPaths(projectPath, onProgress = null) {
+  const syncScriptPath = path.join(projectPath, 'scripts', 'workflow', 'sync-backend-api-paths.js');
+  if (!existsSync(syncScriptPath)) {
+    return;
+  }
+
+  await runProjectNodeScript(
+    path.join('scripts', 'workflow', 'sync-backend-api-paths.js'),
+    [],
+    projectPath,
   );
-  onProgress?.('Copied AGENTS.md');
+  onProgress?.('Synced backend API paths');
 }
 
 function normalizeProjectLabel(value) {
@@ -409,6 +544,7 @@ router.post('/create-workspace', async (req, res) => {
         requestedWorkspaceName,
         req.user.id,
       );
+      await syncStageGatedBackendApiPaths(managedWorkspace.workspacePath);
 
       return res.json({
         success: true,
@@ -496,6 +632,7 @@ router.post('/create-workspace', async (req, res) => {
         }
 
         const project = await addProjectManually(clonePath, requestedWorkspaceName, req.user.id);
+        await syncStageGatedBackendApiPaths(clonePath);
 
         return res.json({
           success: true,
@@ -512,6 +649,7 @@ router.post('/create-workspace', async (req, res) => {
       }
 
       const project = await addProjectManually(absolutePath, requestedWorkspaceName, req.user.id);
+      await syncStageGatedBackendApiPaths(absolutePath);
 
       return res.json({
         success: true,
@@ -767,6 +905,9 @@ router.get('/clone-progress', async (req, res) => {
           });
 
           const project = await addProjectManually(clonePath, requestedWorkspaceName, req.user.id);
+          await syncStageGatedBackendApiPaths(clonePath, (message) => {
+            sendEvent('progress', { message });
+          });
           sendEvent('complete', { project, message: 'Repository cloned and project initialized successfully' });
         } catch (error) {
           try {

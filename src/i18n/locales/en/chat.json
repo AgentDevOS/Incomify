@@ -175,8 +175,8 @@
     "buttonTitle": "Thinking mode: {{mode}}"
   },
   "providerSelection": {
-    "title": "Claude Code",
-    "description": "Claude Code is selected by default. Start typing below.",
+    "title": "Codex",
+    "description": "Codex is selected by default. Start typing below.",
     "selectModel": "Select Model",
     "providerInfo": {
       "anthropic": "by Anthropic",
