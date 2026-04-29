@@ -116,6 +116,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  publishProjectDeploymentFile: (projectName, payload) =>
+    authenticatedFetch(`/api/projects/${projectName}/deployment/files`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   readFile: (projectName, filePath) =>
     authenticatedFetch(`/api/projects/${projectName}/file?filePath=${encodeURIComponent(filePath)}`),
   saveFile: (projectName, filePath, content) =>

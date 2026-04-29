@@ -10,6 +10,7 @@ import {
   deployProjectArtifact,
   ensureProjectDeployDirectories,
   getDeployBaseUrl,
+  publishProjectFileToDeployment,
 } from '../services/deployment.js';
 import {
   getConfiguredWorkspacesRoot,
@@ -776,6 +777,44 @@ router.post('/:projectName/deployment/sync', async (req, res) => {
       : error.statusCode || 500;
     console.error('Error syncing project deployment artifact:', error);
     res.status(statusCode).json({ error: error.message || 'Failed to sync deployment artifact' });
+  }
+});
+
+/**
+ * Publish a single project file into the unified deployment directory.
+ * POST /api/projects/:projectName/deployment/files
+ */
+router.post('/:projectName/deployment/files', async (req, res) => {
+  try {
+    const { sourcePath } = req.body || {};
+    const projectRecord = getProjectRecordOrThrow(req.user.id, req.params.projectName);
+
+    const deployment = await publishProjectFileToDeployment({
+      userId: req.user.id,
+      projectId: projectRecord.id,
+      projectPath: projectRecord.project_path,
+      baseUrl: resolveDeploymentBaseUrl(req),
+      sourcePath,
+    });
+
+    res.json({
+      success: true,
+      deployment,
+    });
+  } catch (error) {
+    const message = error.message || 'Failed to publish deployment file';
+    const isClientError = error.code === 'ENOENT'
+      || /required|within the project directory|must be a file/i.test(message);
+    const statusCode = isClientError ? 400 : error.statusCode || 500;
+    if (statusCode >= 500) {
+      console.error('Error publishing project deployment file:', error);
+    } else {
+      console.warn('Rejected project deployment file publish:', message);
+    }
+    res.status(statusCode).json({
+      success: false,
+      error: message,
+    });
   }
 });
 

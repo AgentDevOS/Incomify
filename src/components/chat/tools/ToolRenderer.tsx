@@ -151,7 +151,7 @@ export const ToolRenderer: React.FC<ToolRendererProps> = memo(({
         break;
 
       case 'markdown':
-        contentComponent = <MarkdownContent content={contentProps.content || ''} />;
+        contentComponent = <MarkdownContent content={contentProps.content || ''} selectedProject={selectedProject} />;
         break;
 
       case 'file-list':

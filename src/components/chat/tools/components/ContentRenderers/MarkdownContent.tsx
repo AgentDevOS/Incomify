@@ -1,9 +1,11 @@
 import React from 'react';
+import type { Project } from '../../../../../types/app';
 import { Markdown } from '../../../view/subcomponents/Markdown';
 
 interface MarkdownContentProps {
   content: string;
   className?: string;
+  selectedProject?: Project | null;
 }
 
 /**
@@ -12,10 +14,11 @@ interface MarkdownContentProps {
  */
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({
   content,
-  className = 'mt-1 prose prose-sm max-w-none dark:prose-invert'
+  className = 'mt-1 prose prose-sm max-w-none dark:prose-invert',
+  selectedProject = null,
 }) => {
   return (
-    <Markdown className={className}>
+    <Markdown className={className} selectedProject={selectedProject}>
       {content}
     </Markdown>
   );

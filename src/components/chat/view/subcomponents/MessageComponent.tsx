@@ -185,7 +185,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
               <>
                 <div className="flex flex-col">
                   <div className="flex flex-col">
-                    <Markdown className="prose prose-sm max-w-none dark:prose-invert">
+                    <Markdown className="prose prose-sm max-w-none dark:prose-invert" selectedProject={selectedProject}>
                       {String(message.displayText || '')}
                     </Markdown>
                   </div>
@@ -224,7 +224,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                         <span className="text-xs font-medium text-red-700 dark:text-red-300">{t('messageTypes.error')}</span>
                       </div>
                       <div className="relative text-sm text-red-900 dark:text-red-100">
-                        <Markdown className="prose prose-sm prose-red max-w-none dark:prose-invert">
+                        <Markdown className="prose prose-sm prose-red max-w-none dark:prose-invert" selectedProject={selectedProject}>
                           {String(message.toolResult.content || '')}
                         </Markdown>
                         {permissionSuggestion && (
@@ -388,7 +388,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
                     <span>{t('thinking.emoji')}</span>
                   </summary>
                   <div className="mt-2 border-l-2 border-gray-300 pl-4 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-400">
-                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert" selectedProject={selectedProject}>
                       {message.content}
                     </Markdown>
                   </div>
@@ -445,7 +445,7 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
 
                   // Normal rendering for non-JSON content
                   return message.type === 'assistant' ? (
-                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert">
+                    <Markdown className="prose prose-sm prose-gray max-w-none dark:prose-invert" selectedProject={selectedProject}>
                       {content}
                     </Markdown>
                   ) : (
@@ -473,4 +473,3 @@ const MessageComponent = memo(({ message, prevMessage, createDiff, onFileOpen, o
 });
 
 export default MessageComponent;
-

@@ -13,6 +13,7 @@ const {
   getDeployRoot,
   getProjectDeploymentInfo,
   ensureProjectDeployDirectories,
+  publishProjectFileToDeployment,
 } = await import('./deployment.js');
 const { initializeDatabase, db, userDb } = await import('../database/db.js');
 
@@ -89,5 +90,34 @@ describe('deployment paths', () => {
     assert.equal(prototypeTarget.available, true);
     assert.equal(prototypeTarget.sourceAvailable, false);
     assert.equal(prototypeTarget.deployedAvailable, true);
+  });
+
+  test('publishes a project file into the project deploy root while preserving relative path', async () => {
+    process.env.DEPLOY_ROOT = path.join(testRoot, 'deploy-files');
+    process.env.DEPLOY_BASE_URL = 'https://cx.incomify.com/aisoft/deploy';
+
+    const user = userDb.createUser('deployment-file-user', 'password-hash');
+    const projectPath = path.join(testRoot, 'file-project');
+    const reportPath = path.join(projectPath, 'docs', 'test-report.md');
+    await fs.mkdir(path.dirname(reportPath), { recursive: true });
+    await fs.writeFile(reportPath, '# Test Report\n');
+
+    const result = await publishProjectFileToDeployment({
+      userId: user.id,
+      projectId: 4,
+      projectPath,
+      sourcePath: reportPath,
+    });
+
+    const html = await fs.readFile(
+      path.join(process.env.DEPLOY_ROOT, user.publicId, '4', 'docs', 'test-report.html'),
+      'utf8',
+    );
+
+    assert.match(html, /<h1>Test Report<\/h1>/);
+    assert.equal(
+      result.publicUrl,
+      `https://cx.incomify.com/aisoft/deploy/${user.publicId}/4/docs/test-report.html`,
+    );
   });
 });

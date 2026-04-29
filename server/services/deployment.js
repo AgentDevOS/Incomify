@@ -76,6 +76,154 @@ async function clearDirectoryContents(targetPath) {
   )));
 }
 
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderInlineMarkdown(value = '') {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
+function renderMarkdownBody(markdown = '') {
+  const lines = String(markdown).replace(/\r\n/g, '\n').split('\n');
+  const html = [];
+  let paragraph = [];
+  let listItems = [];
+  let inCodeBlock = false;
+  let codeLines = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) return;
+    html.push(`<p>${renderInlineMarkdown(paragraph.join(' '))}</p>`);
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (listItems.length === 0) return;
+    html.push(`<ul>${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join('')}</ul>`);
+    listItems = [];
+  };
+
+  const flushCodeBlock = () => {
+    html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+    codeLines = [];
+  };
+
+  for (const line of lines) {
+    if (line.trim().startsWith('```')) {
+      if (inCodeBlock) {
+        flushCodeBlock();
+        inCodeBlock = false;
+      } else {
+        flushParagraph();
+        flushList();
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      const level = headingMatch[1].length;
+      html.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+      continue;
+    }
+
+    const listMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (listMatch) {
+      flushParagraph();
+      listItems.push(listMatch[1]);
+      continue;
+    }
+
+    flushList();
+    paragraph.push(trimmed);
+  }
+
+  if (inCodeBlock) {
+    flushCodeBlock();
+  }
+  flushParagraph();
+  flushList();
+
+  return html.join('\n');
+}
+
+function getMarkdownTitle(markdown, fallbackTitle) {
+  const heading = String(markdown || '').split(/\r?\n/).find((line) => /^#\s+/.test(line.trim()));
+  return heading ? heading.trim().replace(/^#\s+/, '') : fallbackTitle;
+}
+
+function renderMarkdownDocument(markdown, title) {
+  const safeTitle = escapeHtml(title);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${safeTitle}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.6; color: #111827; background: #f9fafb; }
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 64px; background: #fff; min-height: 100vh; box-sizing: border-box; }
+    h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 1.4em 0 0.55em; color: #0f172a; }
+    h1 { margin-top: 0; padding-bottom: 0.35em; border-bottom: 1px solid #e5e7eb; }
+    p, ul, pre { margin: 0 0 1em; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; background: #f3f4f6; border-radius: 4px; padding: 0.12em 0.3em; }
+    pre { overflow: auto; padding: 16px; border-radius: 8px; background: #111827; color: #f9fafb; }
+    pre code { background: transparent; padding: 0; color: inherit; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e5e7eb; background: #030712; }
+      main { background: #111827; }
+      h1, h2, h3, h4, h5, h6 { color: #f9fafb; }
+      h1 { border-bottom-color: #374151; }
+      code { background: #1f2937; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+${renderMarkdownBody(markdown)}
+  </main>
+</body>
+</html>
+`;
+}
+
+function isMarkdownPath(filePath) {
+  return path.extname(filePath).toLowerCase() === '.md';
+}
+
+function getDeployRelativePathForSource(relativePath) {
+  if (isMarkdownPath(relativePath)) {
+    return relativePath.replace(/\.md$/i, '.html');
+  }
+
+  return relativePath;
+}
+
 async function resolveProjectScopedSourcePath(projectPath, sourcePath) {
   const trimmedSourcePath = String(sourcePath ?? '').trim();
   if (!trimmedSourcePath) {
@@ -165,6 +313,30 @@ export function buildArtifactPublicUrl({
 
   const url = `${resolvedBaseUrl}/${urlPathSegments.join('/')}`;
   return trailingSlash ? `${url}/` : url;
+}
+
+export function buildProjectFilePublicUrl({
+  userId,
+  projectId,
+  baseUrl = null,
+  relativePath = '',
+}) {
+  const resolvedBaseUrl = normalizeBaseUrl(baseUrl || getDeployBaseUrl());
+  if (!resolvedBaseUrl) {
+    return null;
+  }
+
+  const urlPathSegments = [
+    encodeUrlSegment(resolveDeployUserSegment(userId)),
+    encodeUrlSegment(projectId),
+  ];
+
+  const trimmedRelativePath = String(relativePath ?? '').trim().replace(/^[/\\]+/, '');
+  if (trimmedRelativePath) {
+    urlPathSegments.push(...trimmedRelativePath.split(/[\\/]+/).filter(Boolean).map(encodeUrlSegment));
+  }
+
+  return `${resolvedBaseUrl}/${urlPathSegments.join('/')}`;
 }
 
 async function getArtifactAvailability({ artifactType, targetPath, projectPath = null }) {
@@ -320,5 +492,49 @@ export async function deployProjectArtifact({
         baseUrl: deploymentInfo.baseUrl,
         relativePath: copiedEntries[0] || '',
       }),
+  };
+}
+
+export async function publishProjectFileToDeployment({
+  userId,
+  projectId,
+  projectPath,
+  sourcePath,
+  baseUrl = null,
+}) {
+  const deploymentInfo = await ensureProjectDeployDirectories({ userId, projectId, baseUrl, projectPath });
+  const resolvedProjectPath = await fs.realpath(projectPath);
+  const resolvedSourcePath = await resolveProjectScopedSourcePath(projectPath, sourcePath);
+  const sourceStats = await fs.stat(resolvedSourcePath);
+
+  if (!sourceStats.isFile()) {
+    throw new Error('Source path must be a file');
+  }
+
+  const sourceRelativePath = path.relative(resolvedProjectPath, resolvedSourcePath).split(path.sep).join('/');
+  const relativePath = getDeployRelativePathForSource(sourceRelativePath);
+  const targetPath = path.join(getProjectDeployRoot({ userId, projectId }), relativePath);
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+
+  if (isMarkdownPath(resolvedSourcePath)) {
+    const markdown = await fs.readFile(resolvedSourcePath, 'utf8');
+    const title = getMarkdownTitle(markdown, path.basename(relativePath, '.html'));
+    await fs.writeFile(targetPath, renderMarkdownDocument(markdown, title), 'utf8');
+  } else {
+    await fs.cp(resolvedSourcePath, targetPath, { force: true, preserveTimestamps: true });
+  }
+
+  return {
+    ...deploymentInfo,
+    sourcePath: resolvedSourcePath,
+    targetPath,
+    sourceRelativePath,
+    relativePath,
+    publicUrl: buildProjectFilePublicUrl({
+      userId,
+      projectId,
+      baseUrl: deploymentInfo.baseUrl,
+      relativePath,
+    }),
   };
 }

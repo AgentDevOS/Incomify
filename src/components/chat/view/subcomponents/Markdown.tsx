@@ -7,11 +7,15 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useTranslation } from 'react-i18next';
 import { normalizeInlineCodeFences } from '../../utils/chatFormatting';
+import type { Project } from '../../../../types/app';
+import { api } from '../../../../utils/api';
 import { copyTextToClipboard } from '../../../../utils/clipboard';
+import { resolveProjectLink } from '../../../../utils/prototypeLinks';
 
 type MarkdownProps = {
   children: React.ReactNode;
   className?: string;
+  selectedProject?: Project | null;
 };
 
 type CodeBlockProps = {
@@ -116,37 +120,96 @@ const CodeBlock = ({ node, inline, className, children, ...props }: CodeBlockPro
   );
 };
 
-const markdownComponents = {
-  code: CodeBlock,
-  blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600 dark:border-gray-600 dark:text-gray-400">
-      {children}
-    </blockquote>
-  ),
-  a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-    <a href={href} className="text-blue-600 hover:underline dark:text-blue-400" target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
-  p: ({ children }: { children?: React.ReactNode }) => <div className="mb-2 last:mb-0">{children}</div>,
-  table: ({ children }: { children?: React.ReactNode }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="min-w-full border-collapse border border-gray-200 dark:border-gray-700">{children}</table>
-    </div>
-  ),
-  thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-gray-50 dark:bg-gray-800">{children}</thead>,
-  th: ({ children }: { children?: React.ReactNode }) => (
-    <th className="border border-gray-200 px-3 py-2 text-left text-sm font-semibold dark:border-gray-700">{children}</th>
-  ),
-  td: ({ children }: { children?: React.ReactNode }) => (
-    <td className="border border-gray-200 px-3 py-2 align-top text-sm dark:border-gray-700">{children}</td>
-  ),
-};
+async function publishAndOpenProjectLink(
+  event: React.MouseEvent<HTMLAnchorElement>,
+  href: string | undefined,
+  selectedProject?: Project | null,
+) {
+  const resolvedLink = resolveProjectLink(href, { project: selectedProject });
+  const projectName = typeof selectedProject?.name === 'string' ? selectedProject.name : '';
 
-export function Markdown({ children, className }: MarkdownProps) {
+  if (!resolvedLink.shouldPublish || !resolvedLink.sourcePath || !projectName) {
+    return;
+  }
+
+  event.preventDefault();
+
+  const openedWindow = window.open('about:blank', '_blank');
+  if (openedWindow) {
+    openedWindow.opener = null;
+  }
+
+  try {
+    const response = await api.publishProjectDeploymentFile(projectName, {
+      sourcePath: resolvedLink.sourcePath,
+    });
+
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      try {
+        const body = await response.json();
+        message = body?.error || message;
+      } catch {
+        // Keep the HTTP status fallback when the response is not JSON.
+      }
+      throw new Error(message);
+    }
+
+    if (openedWindow) {
+      openedWindow.location.href = resolvedLink.href;
+    } else {
+      window.open(resolvedLink.href, '_blank', 'noopener,noreferrer');
+    }
+  } catch (error) {
+    console.warn('Failed to publish project file link:', error);
+    if (openedWindow) {
+      openedWindow.location.href = href || resolvedLink.href;
+    } else {
+      window.open(href || resolvedLink.href, '_blank', 'noopener,noreferrer');
+    }
+  }
+}
+
+function createMarkdownComponents(selectedProject?: Project | null) {
+  return {
+    code: CodeBlock,
+    blockquote: ({ children }: { children?: React.ReactNode }) => (
+      <blockquote className="my-2 border-l-4 border-gray-300 pl-4 italic text-gray-600 dark:border-gray-600 dark:text-gray-400">
+        {children}
+      </blockquote>
+    ),
+    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
+      <a
+        href={resolveProjectLink(href, { project: selectedProject }).href}
+        onClick={(event) => publishAndOpenProjectLink(event, href, selectedProject)}
+        className="text-blue-600 hover:underline dark:text-blue-400"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {children}
+      </a>
+    ),
+    p: ({ children }: { children?: React.ReactNode }) => <div className="mb-2 last:mb-0">{children}</div>,
+    table: ({ children }: { children?: React.ReactNode }) => (
+      <div className="my-2 overflow-x-auto">
+        <table className="min-w-full border-collapse border border-gray-200 dark:border-gray-700">{children}</table>
+      </div>
+    ),
+    thead: ({ children }: { children?: React.ReactNode }) => <thead className="bg-gray-50 dark:bg-gray-800">{children}</thead>,
+    th: ({ children }: { children?: React.ReactNode }) => (
+      <th className="border border-gray-200 px-3 py-2 text-left text-sm font-semibold dark:border-gray-700">{children}</th>
+    ),
+    td: ({ children }: { children?: React.ReactNode }) => (
+      <td className="border border-gray-200 px-3 py-2 align-top text-sm dark:border-gray-700">{children}</td>
+    ),
+  };
+}
+
+export function Markdown({ children, className, selectedProject = null }: MarkdownProps) {
   const content = normalizeInlineCodeFences(String(children ?? ''));
   const remarkPlugins = useMemo(() => [remarkGfm, remarkMath], []);
   const rehypePlugins = useMemo(() => [rehypeKatex], []);
+  const markdownComponents = useMemo(() => createMarkdownComponents(selectedProject), [selectedProject]);
 
   return (
     <div className={className}>
