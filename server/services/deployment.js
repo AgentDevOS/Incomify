@@ -216,12 +216,186 @@ function isMarkdownPath(filePath) {
   return path.extname(filePath).toLowerCase() === '.md';
 }
 
+function isHtmlPath(filePath) {
+  return ['.html', '.htm'].includes(path.extname(filePath).toLowerCase());
+}
+
 function getDeployRelativePathForSource(relativePath) {
   if (isMarkdownPath(relativePath)) {
     return relativePath.replace(/\.md$/i, '.html');
   }
 
   return relativePath;
+}
+
+function stripUrlDecorations(value) {
+  const hashIndex = value.indexOf('#');
+  const withoutHash = hashIndex === -1 ? value : value.slice(0, hashIndex);
+  const queryIndex = withoutHash.indexOf('?');
+  return queryIndex === -1 ? withoutHash : withoutHash.slice(0, queryIndex);
+}
+
+function getUrlDecoration(value) {
+  const queryIndex = value.indexOf('?');
+  const hashIndex = value.indexOf('#');
+  const indexes = [queryIndex, hashIndex].filter((index) => index !== -1);
+  if (indexes.length === 0) {
+    return '';
+  }
+
+  return value.slice(Math.min(...indexes));
+}
+
+function normalizeHtmlAssetReference(value = '') {
+  const trimmed = String(value || '').trim();
+  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//')) {
+    return '';
+  }
+
+  if (/^(?:[a-z][a-z\d+.-]*:)/i.test(trimmed)) {
+    return '';
+  }
+
+  const undecorated = stripUrlDecorations(trimmed).replace(/\\/g, '/');
+  if (!undecorated) {
+    return '';
+  }
+
+  try {
+    return decodeURIComponent(undecorated);
+  } catch {
+    return undecorated;
+  }
+}
+
+function getHtmlAssetReferences(html = '') {
+  const references = new Set();
+  const attributePattern = /\b(?:href|src)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi;
+  let match;
+
+  while ((match = attributePattern.exec(html)) !== null) {
+    const reference = String(match[1] || match[2] || match[3] || '').trim();
+    if (normalizeHtmlAssetReference(reference)) {
+      references.add(reference);
+    }
+  }
+
+  return Array.from(references);
+}
+
+function toHtmlRelativeUrl(fromRelativePath, toRelativePath) {
+  const fromDir = path.posix.dirname(fromRelativePath.split(path.sep).join('/'));
+  const targetPath = toRelativePath.split(path.sep).join('/');
+  const relativeUrl = path.posix.relative(fromDir, targetPath);
+
+  if (!relativeUrl || relativeUrl.startsWith('.') || relativeUrl.startsWith('/')) {
+    return relativeUrl || './';
+  }
+
+  return `./${relativeUrl}`;
+}
+
+async function resolveHtmlAssetPath({
+  reference,
+  sourceDir,
+  resolvedProjectPath,
+}) {
+  const normalizedReference = normalizeHtmlAssetReference(reference);
+  if (!normalizedReference) {
+    return null;
+  }
+
+  const referencePath = normalizedReference.replace(/^\/+/, '');
+  const candidates = normalizedReference.startsWith('/')
+    ? [
+      path.resolve(sourceDir, referencePath),
+      path.resolve(resolvedProjectPath, referencePath),
+    ]
+    : [path.resolve(sourceDir, normalizedReference)];
+
+  for (const candidatePath of candidates) {
+    let resolvedAssetPath;
+    try {
+      resolvedAssetPath = await fs.realpath(candidatePath);
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        continue;
+      }
+      throw error;
+    }
+
+    if (!isPathInside(resolvedProjectPath, resolvedAssetPath)) {
+      continue;
+    }
+
+    const assetStats = await fs.stat(resolvedAssetPath);
+    if (assetStats.isFile()) {
+      return resolvedAssetPath;
+    }
+  }
+
+  return null;
+}
+
+async function copyAndRewriteHtmlReferencedAssets({
+  html,
+  resolvedProjectPath,
+  resolvedSourcePath,
+  sourceRelativePath,
+  deployRootPath,
+}) {
+  const sourceDir = path.dirname(resolvedSourcePath);
+  const references = getHtmlAssetReferences(html);
+  const rewrittenReferences = new Map();
+
+  await Promise.all(references.map(async (reference) => {
+    const resolvedAssetPath = await resolveHtmlAssetPath({
+      reference,
+      sourceDir,
+      resolvedProjectPath,
+    });
+
+    if (!resolvedAssetPath) {
+      return;
+    }
+
+    const assetRelativePath = path.relative(resolvedProjectPath, resolvedAssetPath);
+    const targetAssetPath = path.join(deployRootPath, assetRelativePath);
+    await fs.mkdir(path.dirname(targetAssetPath), { recursive: true });
+    await fs.cp(resolvedAssetPath, targetAssetPath, { force: true, preserveTimestamps: true });
+
+    if (!reference.startsWith('/')) {
+      return;
+    }
+
+    rewrittenReferences.set(
+      reference,
+      `${toHtmlRelativeUrl(sourceRelativePath, assetRelativePath)}${getUrlDecoration(reference)}`,
+    );
+  }));
+
+  if (rewrittenReferences.size === 0) {
+    return html;
+  }
+
+  return html.replace(
+    /(\b(?:href|src)\s*=\s*)("([^"]+)"|'([^']+)'|([^\s>]+))/gi,
+    (match, prefix, quotedValue, doubleQuotedValue, singleQuotedValue, unquotedValue) => {
+      const value = doubleQuotedValue || singleQuotedValue || unquotedValue || '';
+      const replacement = rewrittenReferences.get(value);
+      if (!replacement) {
+        return match;
+      }
+
+      if (doubleQuotedValue !== undefined) {
+        return `${prefix}"${replacement}"`;
+      }
+      if (singleQuotedValue !== undefined) {
+        return `${prefix}'${replacement}'`;
+      }
+      return `${prefix}${replacement}`;
+    },
+  );
 }
 
 async function resolveProjectScopedSourcePath(projectPath, sourcePath) {
@@ -521,7 +695,19 @@ export async function publishProjectFileToDeployment({
     const title = getMarkdownTitle(markdown, path.basename(relativePath, '.html'));
     await fs.writeFile(targetPath, renderMarkdownDocument(markdown, title), 'utf8');
   } else {
-    await fs.cp(resolvedSourcePath, targetPath, { force: true, preserveTimestamps: true });
+    if (isHtmlPath(resolvedSourcePath)) {
+      const html = await fs.readFile(resolvedSourcePath, 'utf8');
+      const rewrittenHtml = await copyAndRewriteHtmlReferencedAssets({
+        html,
+        resolvedProjectPath,
+        resolvedSourcePath,
+        sourceRelativePath,
+        deployRootPath: getProjectDeployRoot({ userId, projectId }),
+      });
+      await fs.writeFile(targetPath, rewrittenHtml, 'utf8');
+    } else {
+      await fs.cp(resolvedSourcePath, targetPath, { force: true, preserveTimestamps: true });
+    }
   }
 
   return {
