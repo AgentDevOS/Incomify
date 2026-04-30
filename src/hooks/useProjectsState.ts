@@ -410,6 +410,16 @@ export function useProjectsState({
   }, [persistProjectSelection, selectedProject?.name]);
 
   useEffect(() => {
+    if (!selectedProject?.name || !selectedProject.backend) {
+      return;
+    }
+
+    api.ensureProjectBackend(selectedProject.name).catch((error) => {
+      console.warn('Failed to ensure project backend is running:', error);
+    });
+  }, [selectedProject?.name, selectedProject?.backend]);
+
+  useEffect(() => {
     const resolvedProjectName =
       selectedSession?.__projectName ||
       (

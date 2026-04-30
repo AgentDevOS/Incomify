@@ -111,6 +111,16 @@ export const api = {
     }),
   getProjectDeployment: (projectName) =>
     authenticatedFetch(`/api/projects/${projectName}/deployment`),
+  ensureProjectBackend: (projectName) =>
+    authenticatedFetch(`/api/projects/${projectName}/backend/ensure`, {
+      method: 'POST',
+    }),
+  getProjectBackendStatus: (projectName) =>
+    authenticatedFetch(`/api/projects/${projectName}/backend/status`),
+  stopProjectBackend: (projectName) =>
+    authenticatedFetch(`/api/projects/${projectName}/backend/stop`, {
+      method: 'POST',
+    }),
   syncProjectDeployment: (projectName, payload) =>
     authenticatedFetch(`/api/projects/${projectName}/deployment/sync`, {
       method: 'POST',

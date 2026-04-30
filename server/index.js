@@ -350,8 +350,13 @@ const wss = new WebSocketServer({
 app.locals.wss = wss;
 
 app.use(cors({ exposedHeaders: ['X-Refreshed-Token'] }));
+function captureRawBody(req, _res, buffer) {
+    req.rawBody = Buffer.from(buffer);
+}
+
 app.use(express.json({
     limit: '50mb',
+    verify: captureRawBody,
     type: (req) => {
         // Skip multipart/form-data requests (for file uploads like images)
         const contentType = req.headers['content-type'] || '';
@@ -361,7 +366,7 @@ app.use(express.json({
         return contentType.includes('json');
     }
 }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.urlencoded({ limit: '50mb', extended: true, verify: captureRawBody }));
 
 // Public health check endpoint (no authentication required)
 app.get('/health', (req, res) => {

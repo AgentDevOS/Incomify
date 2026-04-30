@@ -1,11 +1,14 @@
 import express from 'express';
 import { existsSync, mkdirSync, promises as fs } from 'fs';
+import http from 'http';
 import path from 'path';
 import { spawn } from 'child_process';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { addProjectManually } from '../projects.js';
 import { userDb, userProjectsDb } from '../database/db.js';
+import { getProjectBackend } from '../services/project-backend.js';
+import { projectBackendManager } from '../services/project-backend-manager.js';
 import {
   deployProjectArtifact,
   ensureProjectDeployDirectories,
@@ -70,6 +73,56 @@ const STAGE_GATED_WORKFLOW_COPY_EXCLUDES = new Set([
 function sanitizeGitError(message, token) {
   if (!message || !token) return message;
   return message.replace(new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '***');
+}
+
+function getScopedProjectBackend(userId, projectName) {
+  const project = userProjectsDb.getProject(userId, projectName);
+  if (!project) {
+    const error = new Error('Project not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const backend = getProjectBackend(project.id);
+  if (!backend) {
+    const error = new Error('Project backend is not configured');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return backend;
+}
+
+function sendBackendError(res, error) {
+  res.status(error.statusCode || 500).json({
+    error: error.message,
+  });
+}
+
+function requestCanHaveBody(method) {
+  return method !== 'GET' && method !== 'HEAD';
+}
+
+function forwardProxyRequestBody(req, proxyReq) {
+  if (!requestCanHaveBody(req.method)) {
+    proxyReq.end();
+    return;
+  }
+
+  if (Buffer.isBuffer(req.rawBody)) {
+    proxyReq.setHeader('content-length', req.rawBody.length);
+    proxyReq.end(req.rawBody);
+    return;
+  }
+
+  if (typeof req.rawBody === 'string') {
+    const rawBody = Buffer.from(req.rawBody);
+    proxyReq.setHeader('content-length', rawBody.length);
+    proxyReq.end(rawBody);
+    return;
+  }
+
+  req.pipe(proxyReq);
 }
 
 // Configure allowed workspace root. Prefer an explicit env override; otherwise
@@ -218,6 +271,80 @@ export async function installStageGatedWorkflowKit(targetProjectPath, projectNam
   );
   onProgress?.('Initialized stage-gated workflow');
 }
+
+router.get('/:projectName/backend/status', async (req, res) => {
+  try {
+    const backend = getScopedProjectBackend(req.user.id, req.params.projectName);
+    const status = await projectBackendManager.getStatus(backend);
+    res.json({ backend: status });
+  } catch (error) {
+    sendBackendError(res, error);
+  }
+});
+
+router.post('/:projectName/backend/ensure', async (req, res) => {
+  try {
+    const backend = getScopedProjectBackend(req.user.id, req.params.projectName);
+    const status = await projectBackendManager.ensureRunning(backend);
+    res.json({ backend: status });
+  } catch (error) {
+    sendBackendError(res, error);
+  }
+});
+
+router.post('/:projectName/backend/stop', async (req, res) => {
+  try {
+    const backend = getScopedProjectBackend(req.user.id, req.params.projectName);
+    const status = await projectBackendManager.stop(backend);
+    res.json({ backend: status });
+  } catch (error) {
+    sendBackendError(res, error);
+  }
+});
+
+router.all('/:projectName/backend/proxy/*', async (req, res) => {
+  try {
+    const backend = getScopedProjectBackend(req.user.id, req.params.projectName);
+    await projectBackendManager.ensureRunning(backend);
+
+    const proxyPath = `/${req.params[0] || ''}`;
+    const queryIndex = req.originalUrl.indexOf('?');
+    const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+    const headers = {
+      ...req.headers,
+      host: `127.0.0.1:${backend.port}`,
+    };
+    delete headers.authorization;
+    delete headers.cookie;
+    delete headers['content-length'];
+
+    const proxyReq = http.request(
+      {
+        hostname: '127.0.0.1',
+        port: backend.port,
+        path: `${proxyPath}${query}`,
+        method: req.method,
+        headers,
+      },
+      (proxyRes) => {
+        res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+        proxyRes.pipe(res);
+      },
+    );
+
+    proxyReq.on('error', (error) => {
+      if (!res.headersSent) {
+        res.status(502).json({ error: 'Project backend proxy failed', details: error.message });
+      } else {
+        res.end();
+      }
+    });
+
+    forwardProxyRequestBody(req, proxyReq);
+  } catch (error) {
+    sendBackendError(res, error);
+  }
+});
 
 async function assertStageGatedWorkflowKitIsComplete() {
   try {

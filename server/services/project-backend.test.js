@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,6 +14,25 @@ process.env.PROJECT_BACKEND_PORT_END = '43105';
 
 const { initializeDatabase, db, userDb, userProjectsDb, projectBackendsDb } = await import('../database/db.js');
 const { provisionRustBackendForProject } = await import('./project-backend.js');
+const { createProjectBackendManager, parseCargoPackageName } = await import('./project-backend-manager.js');
+
+function createClosingChild(exitCode) {
+  const child = new EventEmitter();
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.exitCode = null;
+  child.kill = () => {
+    child.exitCode = child.exitCode ?? 143;
+    child.emit('close', child.exitCode);
+  };
+
+  queueMicrotask(() => {
+    child.exitCode = exitCode;
+    child.emit('close', exitCode);
+  });
+
+  return child;
+}
 
 describe('project backend provisioning', () => {
   before(async () => {
@@ -88,5 +108,55 @@ describe('project backend provisioning', () => {
     });
 
     assert.notEqual(firstBackend.port, secondBackend.port);
+  });
+
+  test('parses Cargo package name for managed backend binary launch', () => {
+    assert.equal(
+      parseCargoPackageName(`[package]
+version = "0.1.0"
+name = "incomify-backend"
+
+[dependencies]
+axum = "0.7"
+`),
+      'incomify-backend',
+    );
+  });
+
+  test('retries backend startup after an initial cargo build failure', async () => {
+    const backendPath = path.join(testRoot, 'retry-workspace', 'src', 'backend');
+    await fs.mkdir(backendPath, { recursive: true });
+    await fs.writeFile(path.join(backendPath, 'Cargo.toml'), `[package]
+name = "retry-backend"
+version = "0.1.0"
+edition = "2021"
+`);
+
+    let buildAttempts = 0;
+    const manager = createProjectBackendManager({
+      spawnImpl: (command) => {
+        assert.equal(command, 'cargo');
+        buildAttempts += 1;
+        return createClosingChild(1);
+      },
+      watchImpl: null,
+      checkHealth: async () => false,
+      logger: { warn() {}, error() {} },
+    });
+    const backend = {
+      language: 'rust',
+      port: 43104,
+      path: backendPath,
+    };
+
+    await assert.rejects(
+      manager.ensureRunning(backend),
+      /Rust backend build failed with exit code 1/,
+    );
+    await assert.rejects(
+      manager.ensureRunning(backend),
+      /Rust backend build failed with exit code 1/,
+    );
+    assert.equal(buildAttempts, 2);
   });
 });
