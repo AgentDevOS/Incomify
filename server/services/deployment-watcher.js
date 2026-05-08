@@ -12,6 +12,7 @@ const WATCH_DEBOUNCE_MS = 1500;
 const WATCHED_DEPLOYMENT_RULES = [
   { artifactType: 'prototype', sourcePath: 'prototype' },
   { artifactType: 'web', sourcePath: 'dist' },
+  { artifactType: 'mini-program', sourcePath: 'release/miniprogram' },
 ];
 const WATCHER_IGNORED_SEGMENTS = new Set([
   'node_modules',
@@ -253,8 +254,11 @@ async function registerProjectDeploymentWatcher(projectRecord) {
         return true;
       }
 
+      const normalizedRelativePath = segments.join('/');
       return !WATCHED_DEPLOYMENT_RULES.some((rule) => (
-        segments[0] === rule.sourcePath
+        normalizedRelativePath === rule.sourcePath
+        || normalizedRelativePath.startsWith(`${rule.sourcePath}/`)
+        || rule.sourcePath.startsWith(`${normalizedRelativePath}/`)
       ));
     },
     ignoreInitial: true,

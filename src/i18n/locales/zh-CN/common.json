@@ -97,7 +97,18 @@
     "openPrototype": "打开原型",
     "openingPrototype": "打开中...",
     "prototypeNotAvailable": "原型暂不可用，请先生成 prototype/index.html。",
-    "prototypeOpenFailed": "打开原型失败"
+    "prototypeOpenFailed": "打开原型失败",
+    "openMiniProgramDelivery": "小程序交付",
+    "openingMiniProgram": "打开中...",
+    "miniProgramDeliveryTitle": "小程序交付",
+    "miniProgramDeliverySubtitle": "用微信扫描预览码打开；或扫描下载码下载交付包。",
+    "wechatPreviewQr": "微信预览码",
+    "wechatPreviewQrMissing": "未找到 preview-qr.png。请在 release/miniprogram 中放入微信开发者工具生成的预览码。",
+    "downloadQr": "下载二维码",
+    "downloadMiniProgram": "下载交付包",
+    "openMiniProgramFolder": "打开目录",
+    "miniProgramNotAvailable": "小程序交付暂不可用，请先生成 release/miniprogram。",
+    "miniProgramOpenFailed": "打开小程序交付失败"
   },
   "fileTree": {
     "loading": "正在加载文件...",

@@ -4,6 +4,7 @@ import { userDb } from '../database/db.js';
 
 export const DEPLOYABLE_ARTIFACT_TYPES = ['android', 'ios', 'mini-program', 'prototype', 'web'];
 const ARTIFACT_SOURCE_PATH_ALLOWLIST = {
+  'mini-program': new Set(['release/miniprogram', 'dist/miniprogram']),
   prototype: new Set(['prototype']),
   web: new Set(['dist']),
 };
