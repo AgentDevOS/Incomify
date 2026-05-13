@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const fs=require('fs'),path=require('path');const hook='workflow-stage-guard.js';let dir=process.cwd();for(;;){const candidate=path.join(dir,'scripts','hooks',hook);if(fs.existsSync(candidate)&&fs.existsSync(path.join(dir,'.workflow'))){process.chdir(dir);require(candidate);break}const parent=path.dirname(dir);if(parent===dir){console.error('Stage-gated workflow hook not found from '+process.cwd());process.exit(1)}dir=parent}\"",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const fs=require('fs'),path=require('path');const hook='workflow-stage-sync.js';let dir=process.cwd();for(;;){const candidate=path.join(dir,'scripts','hooks',hook);if(fs.existsSync(candidate)&&fs.existsSync(path.join(dir,'.workflow'))){process.chdir(dir);require(candidate);break}const parent=path.dirname(dir);if(parent===dir){console.error('Stage-gated workflow hook not found from '+process.cwd());process.exit(1)}dir=parent}\"",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
+}

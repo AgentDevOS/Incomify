@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-30T04:04:21.212Z",
+  "stageId": "development",
+  "status": "baseline_missing",
+  "tier": "STANDARD",
+  "reason": "缺少阶段基线，已回退为 STANDARD 验证等级",
+  "filesChanged": 0,
+  "estimatedLinesChanged": 0,
+  "testCoverage": "none",
+  "hasArchitecturalChanges": false,
+  "hasSecurityImplications": false,
+  "changedPaths": [],
+  "evidenceRequired": "结构化测试结果 + 构建通过",
+  "warnings": [
+    "当前阶段没有可比对的基线快照，建议按 init -> confirm 正常推进后再评估改动范围。"
+  ]
+}

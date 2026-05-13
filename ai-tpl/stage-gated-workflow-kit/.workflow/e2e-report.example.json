@@ -1,0 +1,22 @@
+{
+  "e2e": {
+    "frameworks": [
+      "patrol"
+    ],
+    "realE2EPassedCount": 1,
+    "cases": [
+      {
+        "id": "core_happy_path",
+        "type": "real_e2e",
+        "status": "passed",
+        "platforms": [
+          "android",
+          "ios"
+        ],
+        "artifacts": [
+          "artifacts/e2e/core_happy_path.log"
+        ]
+      }
+    ]
+  }
+}

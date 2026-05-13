@@ -1,0 +1,18 @@
+{
+  "api": {
+    "cases": [
+      {
+        "method": "POST",
+        "path": "/api/example-resource",
+        "status": "passed",
+        "testFile": "src/backend/tests/api/example_resource_create.rs"
+      },
+      {
+        "method": "GET",
+        "path": "/api/example-resource",
+        "status": "passed",
+        "testFile": "src/backend/tests/api/example_resource_list.rs"
+      }
+    ]
+  }
+}

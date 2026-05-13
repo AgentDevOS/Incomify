@@ -1,0 +1,13 @@
+{
+  "name": "stage-gated-workflow-kit",
+  "private": true,
+  "scripts": {
+    "verify:prototype": "node scripts/verify-prototype.js",
+    "test:verify-prototype": "node scripts/test-verify-prototype.js",
+    "test:workflow-config": "node scripts/test-workflow-config.js",
+    "test:sync-backend-api-paths": "node scripts/test-sync-backend-api-paths.js",
+    "sync:backend-api-paths": "node scripts/workflow/sync-backend-api-paths.js",
+    "review:code": "node scripts/run-code-review.js",
+    "test:all": "node scripts/run-all-tests.js"
+  }
+}

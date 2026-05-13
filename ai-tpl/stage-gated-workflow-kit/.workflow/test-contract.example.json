@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "implementationType": "flutter",
+  "deliveryTargets": [
+    "android",
+    "ios"
+  ],
+  "e2e": {
+    "frameworks": [
+      "patrol"
+    ],
+    "minimumRealE2ECount": 1,
+    "requiredRealE2EScenarios": [
+      "core_happy_path"
+    ]
+  }
+}

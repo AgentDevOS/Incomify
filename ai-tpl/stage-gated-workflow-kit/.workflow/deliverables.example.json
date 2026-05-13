@@ -1,0 +1,49 @@
+{
+  "$schema": "Stage deliverable content contract example. Copy to .workflow/deliverables.json to override defaults.",
+  "requirements_analysis": {
+    "rules": [
+      {
+        "path": "docs/requirement.md",
+        "requiredSections": [
+          "## 项目概述",
+          "## 功能需求",
+          "## 用户使用场景",
+          "## 验收范围",
+          "## 非目标",
+          "## 需求澄清"
+        ]
+      }
+    ]
+  },
+  "prototype": {
+    "rules": [
+      {
+        "path": "docs/prototype.md",
+        "requiredSections": [
+          "## 页面清单",
+          "## 关键交互",
+          "## 验证方式"
+        ]
+      },
+      {
+        "path": "prototype/index.html",
+        "requiredPatterns": [
+          "<!doctype html",
+          "<(button|input|form|select|textarea|a)\\b"
+        ]
+      }
+    ]
+  },
+  "delivery": {
+    "rules": [
+      {
+        "path": "docs/delivery.md",
+        "requiredSections": [
+          "## 交付物",
+          "## 启动方式",
+          "## 已知风险"
+        ]
+      }
+    ]
+  }
+}

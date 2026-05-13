@@ -1,0 +1,16 @@
+{
+  "projectName": "todo-rn-java",
+  "currentStage": "requirements_analysis",
+  "stageStatus": "ready_for_confirmation",
+  "createdAt": "2026-04-06T18:12:00+08:00",
+  "updatedAt": "2026-04-06T18:15:00+08:00",
+  "history": [
+    {
+      "stage": "requirements_analysis",
+      "enteredAt": "2026-04-06T18:12:00+08:00",
+      "completedAt": "2026-04-06T18:15:00+08:00",
+      "status": "ready_for_confirmation"
+    }
+  ],
+  "customAllowedPaths": []
+}

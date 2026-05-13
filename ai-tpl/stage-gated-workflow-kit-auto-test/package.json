@@ -1,0 +1,15 @@
+{
+  "name": "stage-gated-workflow-kit-auto-test",
+  "private": true,
+  "scripts": {
+    "lint": "node -e \"console.log('模板测试项目无需额外静态检查')\"",
+    "test": "node --test tests/unit/*.test.js tests/integration/*.test.js tests/e2e/workflow/*.test.js tests/e2e/audit/*.test.js",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:integration": "node --test tests/integration/*.test.js",
+    "test:e2e": "node --test tests/e2e/workflow/*.test.js tests/e2e/audit/*.test.js",
+    "test:e2e:claude": "node --test --test-concurrency=1 tests/e2e/todo-rn-java/*.test.js tests/e2e/plane-shooter-web/*.test.js",
+    "test:e2e:sdk": "npm run test:e2e:claude",
+    "test:all": "node scripts/run-all-tests.js",
+    "build": "node -e \"console.log('模板测试项目无需构建产物')\""
+  }
+}

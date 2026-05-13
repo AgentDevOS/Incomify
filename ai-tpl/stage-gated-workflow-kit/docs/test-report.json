@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "generatedAt": "2026-04-30T04:04:21.225Z",
+  "projectPath": "/Users/jon/Desktop/work/code/incomify-tpl/stage-gated-workflow-kit",
+  "overall": "failed",
+  "steps": {},
+  "executedSteps": [],
+  "skippedSteps": [
+    "lint",
+    "unit",
+    "integration",
+    "e2e",
+    "build"
+  ],
+  "missingRequiredSteps": [
+    "lint",
+    "unit",
+    "integration",
+    "e2e",
+    "build"
+  ],
+  "verification": {
+    "version": 1,
+    "generatedAt": "2026-04-30T04:04:21.212Z",
+    "stageId": "development",
+    "status": "baseline_missing",
+    "tier": "STANDARD",
+    "reason": "缺少阶段基线，已回退为 STANDARD 验证等级",
+    "filesChanged": 0,
+    "estimatedLinesChanged": 0,
+    "testCoverage": "none",
+    "hasArchitecturalChanges": false,
+    "hasSecurityImplications": false,
+    "changedPaths": [],
+    "evidenceRequired": "结构化测试结果 + 构建通过",
+    "warnings": [
+      "当前阶段没有可比对的基线快照，建议按 init -> confirm 正常推进后再评估改动范围。"
+    ]
+  },
+  "e2e": null,
+  "api": null,
+  "warnings": []
+}

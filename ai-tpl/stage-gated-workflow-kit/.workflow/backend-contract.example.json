@@ -1,0 +1,18 @@
+{
+  "$schema": "Example only. Copy this backend block into .workflow/test-contract.json and replace apiPaths with the current app's real routes.",
+  "backend": {
+    "language": "rust",
+    "framework": "axum",
+    "database": "sqlite",
+    "apiPaths": [
+      {
+        "method": "POST",
+        "path": "/api/example-resource"
+      },
+      {
+        "method": "GET",
+        "path": "/api/example-resource"
+      }
+    ]
+  }
+}

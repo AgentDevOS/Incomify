@@ -1,0 +1,19 @@
+{
+  "projectName": "demo-project",
+  "currentStage": "waiting_requirement_confirmation",
+  "stageHistory": [
+    {
+      "stage": "requirements_analysis",
+      "completedAt": "2026-04-05T01:10:35.248Z",
+      "approvedBy": "user"
+    }
+  ],
+  "requirementConfirmed": true,
+  "prototypeConfirmed": false,
+  "devTestConfirmed": false,
+  "uatConfirmed": false,
+  "approvalMode": "chat",
+  "lastGateSummary": "",
+  "pendingFeedback": "",
+  "updatedAt": "2026-04-05T01:10:35.248Z"
+}

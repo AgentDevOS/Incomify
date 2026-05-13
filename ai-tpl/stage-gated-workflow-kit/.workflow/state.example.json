@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "projectName": "demo-project",
+  "currentStage": "requirements_analysis",
+  "awaitingApproval": false,
+  "pendingApproval": null,
+  "pendingFeedback": "",
+  "customAllowedPaths": [
+    "package.json",
+    "pnpm-lock.yaml",
+    "tsconfig.json"
+  ],
+  "history": [],
+  "lastVerification": null,
+  "updatedAt": "2026-04-05T00:00:00.000Z"
+}

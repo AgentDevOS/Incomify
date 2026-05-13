@@ -1,30 +1,36 @@
 # Repository Guidelines
 
-## 项目结构与模块组织
-这是一个前后端同仓项目。`src/` 是 Vite + React 前端，主要按功能拆分到 `components/`、`hooks/`、`contexts/`、`i18n/`、`utils/` 与 `types/`。`server/` 是 Node.js/Express 后端，包含 `routes/`、`providers/`、`middleware/`、`database/` 与服务集成代码。`shared/` 存放前后端共享常量，`public/` 存放图标、PWA 资源与静态页面，`plugins/starter/` 是插件开发示例，`docker/` 提供容器化参考。
+## Project Structure & Module Organization
+This is a single-package web app with a Vite + React frontend and Node/Express backend. Frontend source lives in `src/`, grouped into `components/`, `hooks/`, `contexts/`, `stores/`, `utils/`, `types/`, and `i18n/`. Backend code lives in `server/`. Shared constants are in `shared/`; static assets are in `public/`; production output is `dist/`. Docker support is under `docker/`, with longer docs in `docs/`.
 
-## 构建、测试与开发命令
-- `npm install`：安装依赖，要求 Node.js 22+。
-- `npm run dev`：同时启动后端和 Vite 开发服务器。
-- `npm run dev:restart`：先杀掉占用目标后端端口和 Vite 端口的旧进程，再启动开发服务器；调试本仓库时优先用这个命令，避免旧进程继续接管 WebSocket 或 API。端口来源依次参考当前环境变量、`.env`、默认值；可用 `KILL_PORTS="3022 5176" npm run dev:restart` 额外清理临时端口。
-- `npm run client`：仅启动前端。
-- `npm run server`：仅启动后端。
-- `npm run lint`：检查 `src/**/*.{ts,tsx,js,jsx}`。
-- `npm run typecheck`：执行 TypeScript 类型检查。
-- `npm run build`：生成生产构建，提交前至少运行一次。
-- `npm run preview`：本地预览构建产物。
+## AI Template Contents
+`ai-tpl/` stores the workflow and gatekeeping assets used when Incomify users create projects through vibing coding. Treat it as the source template for guiding AI-assisted project delivery: it defines staged requirements, prototype, development, verification, and delivery flows, plus scripts and hooks that enforce those stages. Keep hidden entries when moving or syncing this folder: `.gitignore`, `.workflow/`, `.worktrees/`, and nested `.workflow/` or `.claude/` directories are intentional. The source repository metadata is excluded here; `ai-tpl/.git` should not exist.
 
-## 代码风格与命名规范
-项目使用 ES Modules、React 函数组件、Tailwind CSS 与 ESLint 9。优先保持“改动处就近一致”：前端文件通常为 2 空格缩进，旧的后端文件可能使用 4 空格，修改时跟随原文件。组件使用 `PascalCase`，Hook 使用 `useXxx`，工具函数和变量使用 `camelCase`。保持 import 顺序稳定，避免未使用导入，Tailwind 类名顺序交给 ESLint 规则维护。
+Key contents:
+- `ai-tpl/AGENTS.md`, `ai-tpl/CLAUDE.md`, and `ai-tpl/claude-code-stage-gated-workflow-solution.md`: agent-facing instructions and reference material for the vibing coding workflow.
+- `ai-tpl/docs/`: reusable workflow control files, including `SKILL.md`, `gate.js`, stage guard/sync hooks, settings, and state examples.
+- `ai-tpl/stage-gated-workflow-kit/`: the project template kit that installs staged delivery gates, `.workflow/` contracts, workflow scripts, hooks, skills, and verification commands into generated projects.
+- `ai-tpl/stage-gated-workflow-kit-auto-test/`: automated-test harness for validating the staged workflow, including scenario runners, test suites, `.claude/` hooks, artifacts, and workflow state.
+- `ai-tpl/demo/`: sample generated project showing how the gates, prototype docs, scripts, skills, backend/miniprogram sources, and demo dependencies fit together.
 
-## 国际化与扩展点
-多语言文案位于 `src/i18n/locales/<locale>/`，新增界面文本时应同步更新至少 `en`，并检查 `zh-CN` 是否需要补齐。插件相关开发优先参考 `plugins/starter/`，不要直接在主应用中写死仅插件场景可复用的逻辑。
+## Build, Test, and Development Commands
+- `npm install`: install dependencies and native bindings.
+- `npm run dev`: start backend and Vite client together.
+- `npm run dev:restart`: clear stale dev ports, then restart.
+- `npm run client` / `npm run server`: run one side only.
+- `npm test`: run Node's built-in test runner.
+- `npm run lint`: lint frontend files under `src/`.
+- `npm run typecheck`: run `tsc --noEmit`.
+- `npm run build`: create the production bundle.
 
-## 测试与验证要求
-当前仓库未配置统一的 `npm test`，也几乎没有现成测试文件。新增功能或修复时，最低要求是运行 `npm run lint`、`npm run typecheck` 和 `npm run build`。涉及 UI 的改动，请附上截图；涉及会话、插件、认证或 provider 集成时，请在 PR 描述中写明手动验证步骤。
+## Coding Style & Naming Conventions
+Use ES modules, React function components, and TypeScript where existing files do. Match local indentation; frontend files generally use 2 spaces. Name React components with `PascalCase`, hooks as `useXxx`, stores as `useXxxStore`, and utilities with `camelCase`. Keep imports grouped in ESLint order and remove unused imports. Tailwind class order is checked by ESLint.
 
-## 提交与 Pull Request 规范
-提交信息遵循 Conventional Commits，仓库历史中常见格式如 `feat: ...`、`fix(editor): ...`、`chore(release): ...`，并由 `commitlint` 强校验。分支名可参考 `feat/your-feature-name`。PR 应保持单一主题，说明改动内容与原因，关联 issue；UI 变更附截图，Bug 修复附复现与验证方式。不要混入无关重构或格式化噪音。
+## Testing Guidelines
+Tests use Node's built-in `node --test` runner. Place tests next to covered code using `*.test.js`, as in `server/routes/auth.test.js` or `src/utils/prototypeLinks.test.js`. Add focused tests for routes, services, stores, persistence, and utilities. Before opening a PR, run `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build` when build output may change.
 
-## 配置与安全提示
-不要提交密钥、令牌或本地路径配置。涉及 CLI、数据库或 WebSocket 行为时，优先检查 `server/` 中对应模块，并确保文档或默认配置不会暴露本地环境信息。
+## Commit & Pull Request Guidelines
+Commits follow Conventional Commits enforced by `commitlint`, for example `feat(deployment): publish project file links`, `fix(projects): harden backend lifecycle proxy`, or `chore(dev): add restart script`. Keep each PR scoped to one topic. Include a description, linked issue when available, test results, and screenshots for UI changes. Document manual verification for auth, WebSockets, sessions, providers, deployments, or plugins.
+
+## Security & Configuration Tips
+Do not commit secrets, tokens, machine-specific paths, logs, or generated `dist/` changes unless a release task requires them. Prefer environment variables for local configuration, and review backend changes for exposure of workspace paths, credentials, or command output.
